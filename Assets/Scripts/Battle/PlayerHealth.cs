@@ -15,6 +15,8 @@ namespace FPSManager.Battle
         public float CurrentHealth { get; private set; }
         public event Action<PlayerHealth> OnDeath;
         public event Action<PlayerHealth, PlayerHealth, bool> OnDeathWithAttacker;
+        // 죽지 않고 피격만 당했을 때(반응 결정 레이어가 구독) - victim, attacker, isHeadshot, damage
+        public event Action<PlayerHealth, PlayerHealth, bool, float> OnDamaged;
 
         void Awake()
         {
@@ -29,6 +31,10 @@ namespace FPSManager.Battle
             if (CurrentHealth <= 0f)
             {
                 Kill(attacker, isHeadshot);
+            }
+            else
+            {
+                OnDamaged?.Invoke(this, attacker, isHeadshot, amount);
             }
         }
 
