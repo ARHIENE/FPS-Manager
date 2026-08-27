@@ -16,6 +16,8 @@ GameObject:
   - component: {fileID: 100008}
   - component: {fileID: 100009}
   - component: {fileID: 8823447143652862490}
+  - component: {fileID: 3570482476557076600}
+  - component: {fileID: 2468306230742577701}
   m_Layer: 0
   m_Name: AIPlayer
   m_TagString: Untagged
@@ -150,12 +152,28 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9772f2458d035cf93328d6397ad2af3f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FPSManager.Battle.AIBrain
-  detectRadius: 40
-  engageRange: 22
+  detectRadius: 55
+  engageRange: 28
   repathInterval: 0.25
   losBlockMask:
     serializedVersion: 2
     m_Bits: 4294967295
+  detectInterval: 0.15
+  roamStoppingDistance: 0.5
+  roamReachedThreshold: 1.5
+  roamWanderRadius: 30
+  plantChance: 0.6
+  plantMinDuration: 0.4
+  plantMaxDuration: 1
+  strafeBurstMinDuration: 0.3
+  strafeBurstMaxDuration: 0.7
+  coverSearchRadius: 15
+  takeCoverMinDuration: 1
+  takeCoverMaxDuration: 1.8
+  retreatMinDuration: 2
+  retreatMaxDuration: 3.5
+  peekMinDuration: 0.5
+  peekMaxDuration: 0.9
 --- !u!114 &8823447143652862490
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -168,6 +186,41 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bb7112e7deaa4ab4c8aff06f73aa1bc6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FPSManager.Battle.HumanoidBattleAnimator
+--- !u!114 &3570482476557076600
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 100000}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 86aeb4af8a502d04d9ca28058a1bbc57, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::FPSManager.Battle.MovementStepSelector
+  moveSpeed: 4.2
+  angularSpeed: 720
+  acceleration: 14
+  preferredCombatDistance: 14
+  strafeRadius: 5
+  strafeMinInterval: 0.5
+  strafeMaxInterval: 1.4
+  jukeChance: 0.25
+  moveBlendSpeed: 6
+--- !u!114 &2468306230742577701
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 100000}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 240c092bf3da0944aad7e9b0f486723b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::FPSManager.Battle.PlayerCombatStats
+  clutch: 0.5
+  positioning: 0.5
 --- !u!1 &100010
 GameObject:
   m_ObjectHideFlags: 0
@@ -1456,7 +1509,7 @@ SkinnedMeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: e2040610130a73245aedc9fb9f8d9718, type: 2}
+  - {fileID: 2100000, guid: adaf28c11c92a303640e8fb3f1e1d372, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0

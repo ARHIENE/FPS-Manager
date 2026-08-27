@@ -15,6 +15,7 @@ namespace FPSManager.Battle
 
         private MatchManager match;
         private SpectatorCamera spectator;
+        private ZoneManager zone;
         private readonly List<KillFeedItem> killFeed = new List<KillFeedItem>();
 
         private GUIStyle headerStyle;
@@ -32,8 +33,9 @@ namespace FPSManager.Battle
 
         void Awake()
         {
-            match = MatchManager.Instance != null ? MatchManager.Instance : FindFirstObjectByType<MatchManager>();
-            spectator = SpectatorCamera.Instance != null ? SpectatorCamera.Instance : FindFirstObjectByType<SpectatorCamera>();
+            match = MatchManager.Instance != null ? MatchManager.Instance : FindAnyObjectByType<MatchManager>();
+            spectator = SpectatorCamera.Instance != null ? SpectatorCamera.Instance : FindAnyObjectByType<SpectatorCamera>();
+            zone = ZoneManager.Instance != null ? ZoneManager.Instance : FindAnyObjectByType<ZoneManager>();
 
             whiteTex = new Texture2D(1, 1);
             whiteTex.SetPixel(0, 0, Color.white);
@@ -47,9 +49,16 @@ namespace FPSManager.Battle
                     if (killFeed.Count > 6) killFeed.RemoveAt(killFeed.Count - 1);
                 };
 
-                match.OnRoundFinished += (winnerMsg, winnerCol) =>
+                match.OnTeamEliminated += (teamId, remaining) =>
                 {
-                    roundBannerText = winnerMsg;
+                    string msg = $"☠ TEAM {teamId + 1} 탈락 (생존 {remaining}팀)";
+                    killFeed.Insert(0, new KillFeedItem { text = msg, color = Color.white, time = Time.time });
+                    if (killFeed.Count > 6) killFeed.RemoveAt(killFeed.Count - 1);
+                };
+
+                match.OnMatchEnded += (winningTeamId, winnerCol) =>
+                {
+                    roundBannerText = $"TEAM {winningTeamId + 1} WINS!";
                     roundBannerColor = winnerCol;
                     roundBannerTime = Time.time;
                 };
@@ -120,8 +129,10 @@ namespace FPSManager.Battle
 
             if (match == null) match = MatchManager.Instance;
             if (spectator == null) spectator = SpectatorCamera.Instance;
+            if (zone == null) zone = ZoneManager.Instance;
 
             DrawTopHeader();
+            DrawZonePanel();
             DrawKillFeed();
             DrawBanner();
             DrawControlsHint();
@@ -131,34 +142,38 @@ namespace FPSManager.Battle
         void DrawTopHeader()
         {
             float screenW = Screen.width;
-            float panelW = 480f;
+            float panelW = 320f;
             float panelH = 70f;
             Rect panelRect = new Rect((screenW - panelW) / 2f, 15f, panelW, panelH);
 
             DrawSolidRect(panelRect, new Color(0.08f, 0.08f, 0.12f, 0.85f));
 
-            int aliveBlue = match != null ? match.CountAlive(match.GetTeam(0)) : 0;
-            int aliveRed = match != null ? match.CountAlive(match.GetTeam(1)) : 0;
-            int scoreBlue = match != null ? match.ScoreTeamA : 0;
-            int scoreRed = match != null ? match.ScoreTeamB : 0;
-            int round = match != null ? match.CurrentRound : 1;
-
-            // Team Blue Side
-            GUI.color = new Color(0.3f, 0.7f, 1f);
-            GUI.Label(new Rect(panelRect.x + 10f, panelRect.y + 10f, 160f, 25f), $"TEAM BLUE ({aliveBlue}/5)", headerStyle);
-            GUI.Label(new Rect(panelRect.x + 10f, panelRect.y + 35f, 160f, 30f), scoreBlue.ToString(), scoreStyle);
-
-            // Center Round Info
-            GUI.color = Color.white;
-            GUI.Label(new Rect(panelRect.x + 180f, panelRect.y + 12f, 120f, 22f), $"ROUND {round}", headerStyle);
-            GUI.Label(new Rect(panelRect.x + 180f, panelRect.y + 38f, 120f, 25f), "VS", headerStyle);
-
-            // Team Red Side
-            GUI.color = new Color(1f, 0.4f, 0.2f);
-            GUI.Label(new Rect(panelRect.x + panelW - 170f, panelRect.y + 10f, 160f, 25f), $"TEAM RED ({aliveRed}/5)", headerStyle);
-            GUI.Label(new Rect(panelRect.x + panelW - 170f, panelRect.y + 35f, 160f, 30f), scoreRed.ToString(), scoreStyle);
+            int aliveTeams = match != null ? match.AliveTeamCount : 0;
+            int totalTeams = match != null ? match.TotalTeamCount : 0;
 
             GUI.color = Color.white;
+            GUI.Label(new Rect(panelRect.x, panelRect.y + 8f, panelW, 25f), "BATTLE ROYALE", headerStyle);
+            GUI.Label(new Rect(panelRect.x, panelRect.y + 34f, panelW, 30f), $"{aliveTeams} / {totalTeams} TEAMS LEFT", scoreStyle);
+        }
+
+        void DrawZonePanel()
+        {
+            if (zone == null) return;
+
+            float panelW = 220f;
+            float panelH = 58f;
+            Rect rect = new Rect(20f, 15f, panelW, panelH);
+
+            DrawSolidRect(rect, new Color(0.08f, 0.08f, 0.12f, 0.8f));
+
+            string phaseText = zone.CurrentPhaseIndex >= 0 ? $"자기장 PHASE {zone.CurrentPhaseIndex + 1}" : "자기장 대기 중";
+            string stateLabel = zone.IsShrinking ? "축소 중" : "다음 축소까지";
+            int seconds = Mathf.Max(0, Mathf.CeilToInt(zone.PhaseTimeRemaining));
+
+            GUI.color = new Color(0.4f, 0.75f, 1f);
+            GUI.Label(new Rect(rect.x + 10f, rect.y + 6f, panelW - 20f, 22f), phaseText, infoStyle);
+            GUI.color = Color.white;
+            GUI.Label(new Rect(rect.x + 10f, rect.y + 28f, panelW - 20f, 22f), $"{stateLabel}: {seconds}s", infoStyle);
         }
 
         void DrawKillFeed()
@@ -195,7 +210,7 @@ namespace FPSManager.Battle
 
             bannerStyle.normal.textColor = roundBannerColor;
             GUI.Label(new Rect(bannerRect.x, bannerRect.y + 15f, bannerW, 45f), roundBannerText, bannerStyle);
-            GUI.Label(new Rect(bannerRect.x, bannerRect.y + 65f, bannerW, 30f), "Press [SPACE] or [R] to Restart Immediately", subBannerStyle);
+            GUI.Label(new Rect(bannerRect.x, bannerRect.y + 65f, bannerW, 30f), "Press [SPACE] to Restart Immediately", subBannerStyle);
         }
 
         void DrawControlsHint()
@@ -210,8 +225,8 @@ namespace FPSManager.Battle
             GUI.Label(new Rect(rect.x + 10f, rect.y + 8f, panelW - 20f, 20f), "<b>SPECTATOR CONTROLS</b>", infoStyle);
             GUI.Label(new Rect(rect.x + 10f, rect.y + 30f, panelW - 20f, 18f), "WASD + Mouse : Fly Camera", infoStyle);
             GUI.Label(new Rect(rect.x + 10f, rect.y + 50f, panelW - 20f, 18f), "Q / E / Shift : Down / Up / Fast", infoStyle);
-            GUI.Label(new Rect(rect.x + 10f, rect.y + 70f, panelW - 20f, 18f), "1-5: Team Blue / 6-0: Team Red", infoStyle);
-            GUI.Label(new Rect(rect.x + 10f, rect.y + 90f, panelW - 20f, 18f), "ESC: Free Fly | R: Restart Match", infoStyle);
+            GUI.Label(new Rect(rect.x + 10f, rect.y + 70f, panelW - 20f, 18f), "Tab: Cycle Teams | ←/→: Cycle Members", infoStyle);
+            GUI.Label(new Rect(rect.x + 10f, rect.y + 90f, panelW - 20f, 18f), "ESC: Free Fly", infoStyle);
         }
 
         void DrawSpectatedPlayerCard()
@@ -219,15 +234,17 @@ namespace FPSManager.Battle
             if (spectator == null || !spectator.IsPossessing || spectator.SpectatedPlayer == null) return;
 
             PlayerHealth p = spectator.SpectatedPlayer;
+            bool inDanger = zone != null && zone.CurrentPhaseIndex >= 0 && !zone.IsInsideZone(p.transform.position);
+
             float cardW = 280f;
-            float cardH = 80f;
+            float cardH = inDanger ? 100f : 80f;
             Rect rect = new Rect(Screen.width - cardW - 20f, Screen.height - cardH - 20f, cardW, cardH);
 
             DrawSolidRect(rect, new Color(0.08f, 0.08f, 0.12f, 0.85f));
 
-            Color teamCol = p.teamId == 0 ? new Color(0.3f, 0.7f, 1f) : new Color(1f, 0.4f, 0.2f);
+            Color teamCol = match != null ? match.GetTeamColorOf(p.teamId) : Color.white;
             GUI.color = teamCol;
-            GUI.Label(new Rect(rect.x + 12f, rect.y + 8f, cardW - 24f, 22f), $"SPECTATING: {p.name}", headerStyle);
+            GUI.Label(new Rect(rect.x + 12f, rect.y + 8f, cardW - 24f, 22f), $"SPECTATING: {p.name} (TEAM {p.teamId + 1})", headerStyle);
 
             GUI.color = Color.white;
             float hpPct = Mathf.Clamp01(p.CurrentHealth / p.maxHealth);
@@ -240,6 +257,13 @@ namespace FPSManager.Battle
             // HP Bar Fill
             Rect hpFill = new Rect(rect.x + 12f, rect.y + 54f, (cardW - 24f) * hpPct, 14f);
             DrawSolidRect(hpFill, teamCol);
+
+            if (inDanger)
+            {
+                GUI.color = new Color(1f, 0.35f, 0.35f);
+                GUI.Label(new Rect(rect.x + 12f, rect.y + 76f, cardW - 24f, 20f), "⚠ 자기장 피해 중", infoStyle);
+                GUI.color = Color.white;
+            }
         }
 
         void DrawSolidRect(Rect rect, Color color)

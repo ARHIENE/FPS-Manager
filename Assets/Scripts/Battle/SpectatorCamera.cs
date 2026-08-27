@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -21,6 +20,9 @@ namespace FPSManager.Battle
         private float yaw;
         private float pitch;
         private Camera possessedCamera;
+
+        private int selectedTeamIndex = -1;
+        private int selectedMemberIndex;
 
         void Awake()
         {
@@ -85,35 +87,66 @@ namespace FPSManager.Battle
         {
             if (Keyboard.current == null || MatchManager.Instance == null) return;
 
-            for (int i = 0; i < 10; i++)
+            if (Keyboard.current.tabKey.wasPressedThisFrame)
             {
-                Key key = i < 9 ? (Key.Digit1 + i) : Key.Digit0;
-                if (Keyboard.current[key].wasPressedThisFrame)
-                {
-                    Possess(i);
-                    break;
-                }
+                CycleTeam(1);
+            }
+
+            if (possessedCamera != null)
+            {
+                if (Keyboard.current.rightArrowKey.wasPressedThisFrame) CycleMember(1);
+                if (Keyboard.current.leftArrowKey.wasPressedThisFrame) CycleMember(-1);
             }
         }
 
-        public void Possess(int index)
+        // Tab: 다음 팀으로 이동 (해당 팀의 생존자를 우선 빙의)
+        void CycleTeam(int direction)
         {
-            if (MatchManager.Instance == null) return;
+            var teams = MatchManager.Instance.GetTeams();
+            if (teams.Count == 0) return;
 
-            List<PlayerHealth> teamA = MatchManager.Instance.GetTeam(0);
-            List<PlayerHealth> teamB = MatchManager.Instance.GetTeam(1);
+            selectedTeamIndex = (selectedTeamIndex + direction + teams.Count) % teams.Count;
+            selectedMemberIndex = 0;
+            PossessBestInTeam();
+        }
 
-            PlayerHealth target = null;
-            if (index >= 0 && index < 5)
+        // 좌/우 화살표: 현재 팀 안에서 팀원 순환
+        void CycleMember(int direction)
+        {
+            var teams = MatchManager.Instance.GetTeams();
+            if (selectedTeamIndex < 0 || selectedTeamIndex >= teams.Count) return;
+
+            var members = teams[selectedTeamIndex].members;
+            if (members.Count == 0) return;
+
+            selectedMemberIndex = (selectedMemberIndex + direction + members.Count) % members.Count;
+            PossessMember(members[selectedMemberIndex]);
+        }
+
+        void PossessBestInTeam()
+        {
+            var teams = MatchManager.Instance.GetTeams();
+            if (selectedTeamIndex < 0 || selectedTeamIndex >= teams.Count) return;
+
+            var members = teams[selectedTeamIndex].members;
+            if (members.Count == 0) return;
+
+            for (int i = 0; i < members.Count; i++)
             {
-                if (index < teamA.Count) target = teamA[index];
-            }
-            else if (index >= 5 && index < 10)
-            {
-                int bIdx = index - 5;
-                if (bIdx < teamB.Count) target = teamB[bIdx];
+                if (members[i] != null && !members[i].IsDead)
+                {
+                    selectedMemberIndex = i;
+                    PossessMember(members[i]);
+                    return;
+                }
             }
 
+            selectedMemberIndex = 0;
+            PossessMember(members[0]);
+        }
+
+        void PossessMember(PlayerHealth target)
+        {
             if (target == null) return;
 
             Camera targetCam = target.GetComponentInChildren<Camera>(true);
@@ -135,6 +168,7 @@ namespace FPSManager.Battle
                 possessedCamera = null;
             }
             SpectatedPlayer = null;
+            selectedTeamIndex = -1;
             if (cam != null) cam.enabled = true;
         }
     }
