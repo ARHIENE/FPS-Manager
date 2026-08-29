@@ -1,6 +1,8 @@
 {
   "dependencies": {
+    "com.akiojin.unity-cli-bridge": "file:../../_tools/unity-cli/UnityCliBridge/Packages/unity-cli-bridge",
     "com.unity.ai.assistant": "2.18.0-pre.2",
+    "com.unity.ml-agents": "4.0.3",
     "com.unity.ai.inference": "2.6.1",
     "com.unity.ai.navigation": "2.0.14",
     "com.unity.collab-proxy": "2.13.5",

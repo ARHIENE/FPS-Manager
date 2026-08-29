@@ -19,6 +19,7 @@ namespace FPSManager.Battle
         private WeaponController weapon;
 
         // Bones
+        private Transform bRoot;
         private Transform spine;
         private Transform chest;
         private Transform head;
@@ -27,7 +28,14 @@ namespace FPSManager.Battle
         private Transform thighL, shinL, footL;
         private Transform thighR, shinR, footR;
 
+        [Header("앉기 설정")]
+        public float crouchHeightOffset = 0.45f;
+        public float crouchBlendSpeed = 6f;
+
+        private float crouchAmount;
+
         // Base local rotations for rest pose
+        private Vector3 initBRootLocalPos;
         private Quaternion initSpineRot, initChestRot, initHeadRot;
         private Quaternion initUpperArmR, initForearmR, initHandR;
         private Quaternion initUpperArmL, initForearmL, initHandL;
@@ -55,7 +63,7 @@ namespace FPSManager.Battle
 
         void LocateBones()
         {
-            Transform bRoot = transform.Find("Rig/B-root");
+            bRoot = transform.Find("Rig/B-root");
             if (bRoot == null) bRoot = transform.Find("HumanDummy/Rig/B-root");
             if (bRoot == null)
             {
@@ -64,6 +72,8 @@ namespace FPSManager.Battle
             }
 
             if (bRoot == null) return;
+
+            initBRootLocalPos = bRoot.localPosition;
 
             Transform hips = FindChildRecursive(bRoot, "B-hips");
             spine = FindChildRecursive(hips, "B-spine");
@@ -157,13 +167,22 @@ namespace FPSManager.Battle
                 return;
             }
 
+            ApplyCrouchOffset();
             ApplyAimAndWeaponPose();
             ApplyLegAnimation();
         }
 
+        void ApplyCrouchOffset()
+        {
+            bool crouching = movement != null && movement.IsCrouching;
+            crouchAmount = Mathf.MoveTowards(crouchAmount, crouching ? 1f : 0f, crouchBlendSpeed * Time.deltaTime);
+            if (bRoot != null)
+                bRoot.localPosition = initBRootLocalPos - Vector3.up * (crouchHeightOffset * crouchAmount);
+        }
+
         void ApplyAimAndWeaponPose()
         {
-            float speed = agent != null ? agent.velocity.magnitude : 0f;
+            float speed = (agent != null && agent.enabled && agent.isOnNavMesh) ? agent.velocity.magnitude : 0f;
             float isMoving = Mathf.Clamp01(speed / 3f);
 
             // Breathing / slight idle sway
@@ -222,27 +241,46 @@ namespace FPSManager.Battle
 
         void ApplyLegAnimation()
         {
-            float speed = agent != null ? agent.velocity.magnitude : 0f;
+            bool agentActive = agent != null && agent.enabled && agent.isOnNavMesh;
+            float speed = agentActive ? agent.velocity.magnitude : 0f;
+            float crouchKneeBend = crouchAmount * 30f;
+
             if (speed > 0.1f)
             {
                 walkCycle += Time.deltaTime * speed * 3.5f;
-                float legAngle = Mathf.Sin(walkCycle) * 32f * Mathf.Clamp01(speed / 3f);
-                float kneeBendL = Mathf.Max(0f, -Mathf.Sin(walkCycle)) * 45f;
-                float kneeBendR = Mathf.Max(0f, Mathf.Sin(walkCycle)) * 45f;
+                float speedRatio = Mathf.Clamp01(speed / 3f);
+                float cycle = Mathf.Sin(walkCycle);
 
-                if (thighL != null) thighL.localRotation = initThighL * Quaternion.Euler(legAngle, 0f, 0f);
+                // 이동 방향(전진/후퇴 vs 좌우)에 따라 다리를 앞뒤로 흔들지, 옆으로 흔들지 섞어서 결정
+                // (스트레이프 중에도 항상 전진 걷기 사이클만 재생되던 문제 보정)
+                Vector3 localVel = transform.InverseTransformDirection(agent.velocity);
+                float fwdRatio = Mathf.Clamp01(Mathf.Abs(localVel.z) / Mathf.Max(speed, 0.01f));
+                float sideRatio = Mathf.Clamp01(Mathf.Abs(localVel.x) / Mathf.Max(speed, 0.01f));
+                float sideSign = Mathf.Sign(localVel.x);
+
+                float legAngle = cycle * 32f * speedRatio * fwdRatio;
+                float sideAngle = cycle * 22f * speedRatio * sideRatio * sideSign;
+                float kneeBendL = Mathf.Max(0f, -cycle) * 45f * speedRatio + crouchKneeBend;
+                float kneeBendR = Mathf.Max(0f, cycle) * 45f * speedRatio + crouchKneeBend;
+
+                if (thighL != null) thighL.localRotation = initThighL * Quaternion.Euler(legAngle, 0f, sideAngle);
                 if (shinL != null) shinL.localRotation = initShinL * Quaternion.Euler(-kneeBendL, 0f, 0f);
 
-                if (thighR != null) thighR.localRotation = initThighR * Quaternion.Euler(-legAngle, 0f, 0f);
+                if (thighR != null) thighR.localRotation = initThighR * Quaternion.Euler(-legAngle, 0f, -sideAngle);
                 if (shinR != null) shinR.localRotation = initShinR * Quaternion.Euler(-kneeBendR, 0f, 0f);
             }
             else
             {
-                // Return legs to neutral standing stance
-                if (thighL != null) thighL.localRotation = Quaternion.Slerp(thighL.localRotation, initThighL, Time.deltaTime * 10f);
-                if (shinL != null) shinL.localRotation = Quaternion.Slerp(shinL.localRotation, initShinL, Time.deltaTime * 10f);
-                if (thighR != null) thighR.localRotation = Quaternion.Slerp(thighR.localRotation, initThighR, Time.deltaTime * 10f);
-                if (shinR != null) shinR.localRotation = Quaternion.Slerp(shinR.localRotation, initShinR, Time.deltaTime * 10f);
+                // 정지 상태: 앉아있으면 무릎을 굽힌 자세로, 아니면 중립 자세로 보간
+                Quaternion targetThighL = initThighL;
+                Quaternion targetShinL = initShinL * Quaternion.Euler(-crouchKneeBend, 0f, 0f);
+                Quaternion targetThighR = initThighR;
+                Quaternion targetShinR = initShinR * Quaternion.Euler(-crouchKneeBend, 0f, 0f);
+
+                if (thighL != null) thighL.localRotation = Quaternion.Slerp(thighL.localRotation, targetThighL, Time.deltaTime * 10f);
+                if (shinL != null) shinL.localRotation = Quaternion.Slerp(shinL.localRotation, targetShinL, Time.deltaTime * 10f);
+                if (thighR != null) thighR.localRotation = Quaternion.Slerp(thighR.localRotation, targetThighR, Time.deltaTime * 10f);
+                if (shinR != null) shinR.localRotation = Quaternion.Slerp(shinR.localRotation, targetShinR, Time.deltaTime * 10f);
             }
         }
 

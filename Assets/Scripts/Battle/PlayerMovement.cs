@@ -18,6 +18,13 @@ namespace FPSManager.Battle
         public float maxSpread = 3f;
         public float spreadRecoverySpeed = 5f;
 
+        [Header("앉기/뛰기 상태에 따른 정확도 배율")]
+        public float crouchSpreadMultiplier = 0.5f;
+        public float sprintSpreadMultiplier = 1.6f;
+
+        public bool IsCrouching { get; private set; }
+        public bool IsSprinting { get; private set; }
+
         private NavMeshAgent agent;
         private float currentSpread;
         private float currentPitch;
@@ -39,12 +46,21 @@ namespace FPSManager.Battle
             UpdateSpread();
         }
 
+        bool AgentActive() => agent != null && agent.enabled && agent.isOnNavMesh;
+
         void UpdateSpread()
         {
-            float speedRatio = agent.speed > 0.01f ? agent.velocity.magnitude / agent.speed : 0f;
+            float speedRatio = (AgentActive() && agent.speed > 0.01f) ? agent.velocity.magnitude / agent.speed : 0f;
             float targetSpread = Mathf.Lerp(0f, maxSpread, speedRatio);
+
+            if (IsCrouching) targetSpread *= crouchSpreadMultiplier;
+            else if (IsSprinting) targetSpread *= sprintSpreadMultiplier;
+
             currentSpread = Mathf.MoveTowards(currentSpread, targetSpread, spreadRecoverySpeed * Time.deltaTime * 4f);
         }
+
+        public void SetCrouching(bool value) => IsCrouching = value;
+        public void SetSprinting(bool value) => IsSprinting = value;
 
         // 교전 중: 몸(수평)과 조준 피벗(수직)을 목표 지점으로 회전
         public void AimAt(Vector3 worldPoint)
@@ -70,6 +86,8 @@ namespace FPSManager.Battle
         // 교전 대상이 없을 때: 이동 방향을 바라보도록
         public void FaceMoveDirection()
         {
+            if (!AgentActive()) return;
+
             Vector3 vel = agent.velocity;
             vel.y = 0f;
             if (vel.sqrMagnitude > 0.05f)
@@ -86,7 +104,6 @@ namespace FPSManager.Battle
         }
 
         public float GetCurrentSpread() => currentSpread;
-        public bool IsRunning() => agent.speed > 0.01f && agent.velocity.magnitude / agent.speed > 0.6f;
-        public bool IsCrouching() => false;
+        public bool IsRunning() => AgentActive() && agent.speed > 0.01f && agent.velocity.magnitude / agent.speed > 0.6f;
     }
 }

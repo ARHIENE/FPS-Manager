@@ -66,6 +66,8 @@ namespace FPSManager.Battle
             ClearPreviousMatch();
             IsRoundEnded = false;
 
+            if (CurrentRound == 1) WeaponController.ResetAccuracyStats();
+
             SpawnTeam(teamASpawns, 0, teamAColor, teamA, teamAPrefab != null ? teamAPrefab : playerPrefab);
             SpawnTeam(teamBSpawns, 1, teamBColor, teamB, teamBPrefab != null ? teamBPrefab : playerPrefab);
 
@@ -159,6 +161,7 @@ namespace FPSManager.Battle
                 OnScoreChanged?.Invoke(ScoreTeamA, ScoreTeamB);
                 OnRoundFinished?.Invoke(winnerText, winnerColor);
                 Debug.Log($"[MatchManager] Round {CurrentRound} Over - {winnerText}");
+                Debug.Log($"[MatchManager] 누적 명중률: {WeaponController.AccuracyPercent:F1}% ({WeaponController.TotalHits}/{WeaponController.TotalShotsFired})");
 
                 if (autoNextRound)
                 {

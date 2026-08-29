@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.AI;
 
@@ -20,23 +21,40 @@ namespace FPSManager.Battle
         public float strafeMinInterval = 0.5f;
         public float strafeMaxInterval = 1.4f;
         public float jukeChance = 0.25f;
+        [Tooltip("좌우 스트레이프에 전진/후퇴를 섞어 원형 궤도만 도는 것을 방지")]
+        public float distanceJitter = 3f;
 
         [Header("정지-이동 전환 블렌딩")]
         [Tooltip("클수록 정지사격 <-> 이동 전환이 빠르게(딱딱하게) 일어남")]
         public float moveBlendSpeed = 6f;
 
+        [Header("앉기/뛰기 속도 배율")]
+        public float crouchSpeedMultiplier = 0.5f;
+        public float sprintSpeedMultiplier = 1.5f;
+
+        [Header("회피용 점프(홉) 설정")]
+        public float jumpDistance = 2.5f;
+        public float jumpHeight = 0.8f;
+        public float jumpDuration = 0.35f;
+
         private const float combatMoveStoppingDistance = 0.6f;
 
         private NavMeshAgent agent;
+        private PlayerMovement movement;
         private int strafeDir = 1;
+        private float currentDistanceOffset;
         private float nextStrafeFlipTime;
         private float lastRepathTime;
         private float moveScale = 1f;
         private float desiredMoveScale = 1f;
+        private bool isJumping;
+
+        public bool IsJumping => isJumping;
 
         void Awake()
         {
             agent = GetComponent<NavMeshAgent>();
+            movement = GetComponent<PlayerMovement>();
             agent.speed = moveSpeed;
             agent.angularSpeed = angularSpeed;
             agent.acceleration = acceleration;
@@ -50,8 +68,56 @@ namespace FPSManager.Battle
             moveScale = Mathf.MoveTowards(moveScale, desiredMoveScale, moveBlendSpeed * Time.deltaTime);
             if (agent != null && agent.enabled && agent.isOnNavMesh)
             {
-                agent.speed = moveSpeed * moveScale;
+                float stateMultiplier = 1f;
+                if (movement != null)
+                {
+                    if (movement.IsCrouching) stateMultiplier = crouchSpeedMultiplier;
+                    else if (movement.IsSprinting) stateMultiplier = sprintSpeedMultiplier;
+                }
+                agent.speed = moveSpeed * moveScale * stateMultiplier;
             }
+        }
+
+        // 회피용 짧은 홉: NavMesh 경로와 무관하게 지정 방향으로 포물선 이동 후 복귀
+        public void TriggerEvadeHop(Vector3 direction)
+        {
+            if (isJumping || agent == null || !agent.isOnNavMesh) return;
+            StartCoroutine(EvadeHopRoutine(direction));
+        }
+
+        IEnumerator EvadeHopRoutine(Vector3 direction)
+        {
+            isJumping = true;
+
+            Vector3 flatDir = new Vector3(direction.x, 0f, direction.z);
+            if (flatDir.sqrMagnitude < 0.0001f) flatDir = transform.forward;
+            flatDir.Normalize();
+
+            Vector3 startPos = transform.position;
+            Vector3 endPos = startPos + flatDir * jumpDistance;
+            if (NavMesh.SamplePosition(endPos, out NavMeshHit navHit, jumpDistance, NavMesh.AllAreas))
+            {
+                endPos = navHit.position;
+            }
+
+            agent.enabled = false;
+
+            float t = 0f;
+            while (t < jumpDuration)
+            {
+                t += Time.deltaTime;
+                float ratio = Mathf.Clamp01(t / jumpDuration);
+                Vector3 flatPos = Vector3.Lerp(startPos, endPos, ratio);
+                float arc = Mathf.Sin(ratio * Mathf.PI) * jumpHeight;
+                transform.position = flatPos + Vector3.up * arc;
+                yield return null;
+            }
+
+            transform.position = endPos;
+            agent.enabled = true;
+            if (agent.isOnNavMesh) agent.Warp(endPos);
+
+            isJumping = false;
         }
 
         // 상위 레이어가 호출: true면 자유롭게 이동, false면 서서히 감속해 정지(정지사격 우선)
@@ -63,11 +129,12 @@ namespace FPSManager.Battle
         // 목표 주위를 좌우로 스트레이프하며 교전 거리 유지
         public void TickCombatStrafe(Transform target, float repathInterval)
         {
-            if (agent == null || !agent.isOnNavMesh || target == null) return;
+            if (isJumping || agent == null || !agent.isOnNavMesh || target == null) return;
 
             if (Time.time >= nextStrafeFlipTime)
             {
                 strafeDir = -strafeDir;
+                currentDistanceOffset = Random.Range(-distanceJitter, distanceJitter);
                 bool juke = Random.value < jukeChance;
                 nextStrafeFlipTime = Time.time + (juke ? Random.Range(0.12f, 0.22f) : Random.Range(strafeMinInterval, strafeMaxInterval));
                 lastRepathTime = -999f;
@@ -94,14 +161,14 @@ namespace FPSManager.Battle
             Vector3 dirToTarget = toTarget.sqrMagnitude > 0.0001f ? toTarget.normalized : transform.forward;
             Vector3 tangent = Vector3.Cross(Vector3.up, dirToTarget);
 
-            Vector3 anchor = target.position - dirToTarget * preferredCombatDistance;
+            Vector3 anchor = target.position - dirToTarget * (preferredCombatDistance + currentDistanceOffset);
             return anchor + tangent * (strafeDir * strafeRadius);
         }
 
         // 정찰/엄폐/후퇴처럼 특정 지점으로 곧장 이동해야 할 때 공용으로 사용
         public void TickTowards(Vector3 point, float stoppingDistance, float repathInterval)
         {
-            if (agent == null || !agent.isOnNavMesh) return;
+            if (isJumping || agent == null || !agent.isOnNavMesh) return;
 
             if (Time.time - lastRepathTime >= repathInterval)
             {

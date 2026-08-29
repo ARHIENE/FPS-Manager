@@ -28,6 +28,19 @@ namespace FPSManager.Battle
         public float strafeBurstMinDuration = 0.3f;
         public float strafeBurstMaxDuration = 0.7f;
 
+        [Header("교전 중 엄폐 활용 설정")]
+        [Tooltip("교전 중 자세 전환 시점에 근처 엄폐물로 붙는 것을 고를 확률")]
+        public float coverModeChance = 0.35f;
+        public float combatCoverRadius = 10f;
+
+        [Header("타겟 기억 설정")]
+        [Tooltip("스트레이프 중 순간적으로 시야가 끊겨도 이 시간 동안은 마지막 위치를 계속 조준(홱 돌아보는 현상 방지)")]
+        public float targetMemoryDuration = 0.6f;
+
+        [Header("정찰 경로 다양화 설정")]
+        [Tooltip("정찰 중 다음 목적지로 엄폐물을 고를 확률 (나머지는 기존처럼 적 진영 방향)")]
+        public float coverPatrolChance = 0.6f;
+
         [Header("피격 반응 설정")]
         public float coverSearchRadius = 15f;
         public float takeCoverMinDuration = 1.0f;
@@ -44,10 +57,14 @@ namespace FPSManager.Battle
         private PlayerCombatStats stats;
 
         private PlayerHealth currentTarget;
+        private float lastSeenTime = -999f;
         private Vector3 roamPoint;
 
-        // 정지사격 <-> 스트레이프 자세 전환
-        private bool isPlanted;
+        private enum CombatMoveMode { Planted, Strafe, Cover }
+
+        // 정지사격 <-> 스트레이프 <-> 엄폐 이동 전환
+        private CombatMoveMode moveMode = CombatMoveMode.Strafe;
+        private Transform combatCoverTarget;
         private float nextStanceChangeTime;
 
         // 피격 반응 상태
@@ -85,14 +102,22 @@ namespace FPSManager.Battle
                 return;
             }
 
-            currentTarget = FindNearestVisibleEnemy();
-
-            if (currentTarget != null)
+            PlayerHealth visibleEnemy = FindNearestVisibleEnemy();
+            if (visibleEnemy != null)
             {
-                Engage(currentTarget);
+                currentTarget = visibleEnemy;
+                lastSeenTime = Time.time;
+                Engage(currentTarget, canFire: true);
+            }
+            else if (currentTarget != null && !currentTarget.IsDead && Time.time - lastSeenTime < targetMemoryDuration)
+            {
+                // 스트레이프/엄폐 이동 중 순간적으로 시야가 끊겨도 곧바로 이동 방향을 보지 않고,
+                // 잠깐은 마지막으로 본 위치를 계속 조준한다 (홱 돌아보는 현상 방지)
+                Engage(currentTarget, canFire: false);
             }
             else
             {
+                currentTarget = null;
                 Search();
             }
         }
@@ -102,7 +127,7 @@ namespace FPSManager.Battle
         void HandleDamaged(PlayerHealth victim, PlayerHealth attacker, bool isHeadshot, float amount)
         {
             bool attackerKnown = attacker != null && !attacker.IsDead && HasLineOfSight(attacker);
-            Transform nearestCover = FindNearestCover();
+            Transform nearestCover = FindNearestCover(coverSearchRadius);
 
             var ctx = new CombatReactionEvaluator.Context
             {
@@ -179,11 +204,11 @@ namespace FPSManager.Battle
             return transform.position;
         }
 
-        Transform FindNearestCover()
+        Transform FindNearestCover(float searchRadius)
         {
             GameObject[] covers = GameObject.FindGameObjectsWithTag("Cover");
             Transform best = null;
-            float bestDist = coverSearchRadius;
+            float bestDist = searchRadius;
 
             foreach (var cover in covers)
             {
@@ -199,33 +224,55 @@ namespace FPSManager.Battle
 
         // ---- 평상시 교전/정찰 ----
 
-        void Engage(PlayerHealth target)
+        void Engage(PlayerHealth target, bool canFire)
         {
+            // 몸/조준은 이동 모드와 무관하게 항상 타겟을 향한다 (스트레이프/엄폐 이동 중에도 적을 계속 봄)
             Vector3 aimPoint = target.transform.position + Vector3.up * 1.5f;
             movement.AimAt(aimPoint);
 
             UpdateCombatStance();
 
-            if (isPlanted)
+            switch (moveMode)
             {
-                // 원칙: 사격 중엔 웬만하면 정지. moveBlendSpeed에 의해 서서히 감속하므로 뚝 끊기지 않는다.
-                movementSelector.SetMovementAllowed(false);
-            }
-            else
-            {
-                movementSelector.SetMovementAllowed(true);
-                movementSelector.TickCombatStrafe(target.transform, repathInterval);
+                case CombatMoveMode.Planted:
+                    // 원칙: 사격 중엔 웬만하면 정지. moveBlendSpeed에 의해 서서히 감속하므로 뚝 끊기지 않는다.
+                    movementSelector.SetMovementAllowed(false);
+                    break;
+
+                case CombatMoveMode.Cover:
+                    movementSelector.SetMovementAllowed(true);
+                    if (combatCoverTarget != null)
+                        movementSelector.TickTowards(combatCoverTarget.position, 1.2f, repathInterval);
+                    else
+                        movementSelector.TickCombatStrafe(target.transform, repathInterval);
+                    break;
+
+                default:
+                    movementSelector.SetMovementAllowed(true);
+                    movementSelector.TickCombatStrafe(target.transform, repathInterval);
+                    break;
             }
 
-            weapon.triggerPressed = true;
+            weapon.triggerPressed = canFire;
         }
 
         void UpdateCombatStance()
         {
             if (Time.time < nextStanceChangeTime) return;
 
-            isPlanted = Random.value < plantChance;
-            float duration = isPlanted
+            Transform cover = FindNearestCover(combatCoverRadius);
+            bool alreadyAtCover = cover != null && Vector3.Distance(transform.position, cover.position) < 2.5f;
+            if (cover != null && !alreadyAtCover && Random.value < coverModeChance)
+            {
+                moveMode = CombatMoveMode.Cover;
+                combatCoverTarget = cover;
+            }
+            else
+            {
+                moveMode = Random.value < plantChance ? CombatMoveMode.Planted : CombatMoveMode.Strafe;
+            }
+
+            float duration = moveMode == CombatMoveMode.Planted
                 ? Random.Range(plantMinDuration, plantMaxDuration)
                 : Random.Range(strafeBurstMinDuration, strafeBurstMaxDuration);
             nextStanceChangeTime = Time.time + duration;
@@ -239,11 +286,25 @@ namespace FPSManager.Battle
 
             if (roamPoint == Vector3.zero || Vector3.Distance(transform.position, roamPoint) < roamReachedThreshold)
             {
-                roamPoint = MatchManager.Instance != null
-                    ? MatchManager.Instance.GetRoamPoint(health.teamId)
-                    : transform.position;
+                roamPoint = PickNextRoamPoint();
             }
             movementSelector.TickTowards(roamPoint, roamStoppingDistance, repathInterval);
+        }
+
+        // 정찰 목적지: 확률적으로 엄폐물 사이를 옮겨 다니듯 순찰, 나머지는 기존처럼 적 진영 방향으로 전진
+        Vector3 PickNextRoamPoint()
+        {
+            if (Random.value < coverPatrolChance)
+            {
+                GameObject[] covers = GameObject.FindGameObjectsWithTag("Cover");
+                if (covers.Length > 0)
+                {
+                    return covers[Random.Range(0, covers.Length)].transform.position;
+                }
+            }
+            return MatchManager.Instance != null
+                ? MatchManager.Instance.GetRoamPoint(health.teamId)
+                : transform.position;
         }
 
         bool HasLineOfSight(PlayerHealth other)

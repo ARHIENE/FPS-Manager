@@ -1,4 +1,3 @@
-using System.Collections;
 using UnityEngine;
 
 namespace FPSManager.Battle
@@ -24,6 +23,17 @@ namespace FPSManager.Battle
 
         // AIBrain이 매 프레임 갱신하는 발사 의도.
         [HideInInspector] public bool triggerPressed;
+
+        // 명중률 측정용 전체 집계(모든 플레이어 공용) - 필요할 때 ResetAccuracyStats()로 초기화 후 측정.
+        public static int TotalShotsFired { get; private set; }
+        public static int TotalHits { get; private set; }
+        public static float AccuracyPercent => TotalShotsFired > 0 ? TotalHits * 100f / TotalShotsFired : 0f;
+
+        public static void ResetAccuracyStats()
+        {
+            TotalShotsFired = 0;
+            TotalHits = 0;
+        }
 
         private PlayerHealth myHealth;
         private PlayerMovement myMovement;
@@ -76,6 +86,8 @@ namespace FPSManager.Battle
 
         void Shoot()
         {
+            TotalShotsFired++;
+
             if (aimOrigin == null) aimOrigin = transform;
 
             if (battleAnimator != null)
@@ -164,12 +176,14 @@ namespace FPSManager.Battle
                 endPoint = targetHeadHit.point;
                 headTarget.ApplyDamage(headDamage, myHealth, true);
                 SpawnHitSparks(endPoint, targetHeadHit.normal, Color.yellow);
+                TotalHits++;
             }
             else if (hitBody && bodyDist < obstacleDist)
             {
                 endPoint = targetBodyHit.point;
                 bodyTarget.ApplyDamage(bodyDamage, myHealth, false);
                 SpawnHitSparks(endPoint, targetBodyHit.normal, Color.red);
+                TotalHits++;
             }
             else if (hitObstacle)
             {
@@ -232,29 +246,42 @@ namespace FPSManager.Battle
             lr.SetPosition(0, start);
             lr.SetPosition(1, end);
 
-            StartCoroutine(FadeAndDestroyTracer(tracerGO, lr));
+            // 페이드 코루틴을 쏜 사람(this) 위에서 돌리면, 라운드 전환으로 사수가 Destroy될 때
+            // 코루틴이 중간에 죽어버려 트레이서가 안 지워지고 영구히 남는 버그가 있었음.
+            // 트레이서 자신에게 페이드/삭제를 맡겨서 사수의 생존 여부와 무관하게 만든다.
+            var fader = tracerGO.AddComponent<TracerFader>();
+            fader.StartFade(lr, 0.10f);
         }
 
-        IEnumerator FadeAndDestroyTracer(GameObject obj, LineRenderer lr)
+        // 트레이서 오브젝트 자신에게 붙어 스스로 페이드 후 삭제 - 쏜 사람이 먼저 사라져도 정상 동작.
+        private class TracerFader : MonoBehaviour
         {
-            float duration = 0.10f;
-            float elapsed = 0f;
-            Color startCol = lr.startColor;
-            Color endCol = lr.endColor;
+            LineRenderer lr;
+            Color startFrom, startTo, endFrom, endTo;
+            float duration;
+            float elapsed;
 
-            while (elapsed < duration)
+            public void StartFade(LineRenderer lineRenderer, float fadeDuration)
             {
-                elapsed += Time.deltaTime;
-                float t = elapsed / duration;
-                if (lr != null)
-                {
-                    lr.startColor = Color.Lerp(startCol, new Color(startCol.r, startCol.g, startCol.b, 0f), t);
-                    lr.endColor = Color.Lerp(endCol, new Color(endCol.r, endCol.g, endCol.b, 0f), t);
-                }
-                yield return null;
+                lr = lineRenderer;
+                duration = fadeDuration;
+                startFrom = lr.startColor;
+                endFrom = lr.endColor;
+                startTo = new Color(startFrom.r, startFrom.g, startFrom.b, 0f);
+                endTo = new Color(endFrom.r, endFrom.g, endFrom.b, 0f);
             }
 
-            Destroy(obj);
+            void Update()
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                if (lr != null)
+                {
+                    lr.startColor = Color.Lerp(startFrom, startTo, t);
+                    lr.endColor = Color.Lerp(endFrom, endTo, t);
+                }
+                if (t >= 1f) Destroy(gameObject);
+            }
         }
 
         void SpawnBulletHole(Vector3 point, Vector3 normal)

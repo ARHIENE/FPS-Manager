@@ -1,5 +1,17 @@
 # 변경 이력
 
+## 2026-08-29 — 5v5 AI 전투 디테일 개선 + unity-cli 도입 + ML-Agents 실험
+- **AI 전투 디테일 수정** (`AIBrain`/`MovementStepSelector`/`WeaponController`/`HumanoidBattleAnimator`/`PlayerMovement`)
+  - 스트레이프 중 시야가 순간 끊겨도 곧장 이동 방향을 보지 않고 잠깐 마지막 위치를 계속 조준(`targetMemoryDuration`) — "쐈다가 홱 딴 데 보는" 버그 수정
+  - 교전 자세를 정지사격/스트레이프 2종 → 정지사격/스트레이프/엄폐 이동 3종으로 확장, 이미 도착한 엄폐물은 재선택 제외(가만히 서있는 버그 수정)
+  - 정찰 목적지를 엄폐물 사이 순찰로 다양화, 스트레이프에 전진/후퇴 변주 추가
+  - 앉기/뛰기/옆걸음/회피 홉을 실제 기능으로 구현(`PlayerMovement.SetCrouching/SetSprinting`, `MovementStepSelector.TriggerEvadeHop`) — 다만 AIBrain에는 아직 연동 안 함(판단 로직 없음)
+  - 총알 트레이서가 사수 사망/라운드 전환 시 안 지워지고 영구히 남는 버그 수정(`WeaponController.TracerFader` — 트레이서 자신이 스스로 페이드/삭제)
+  - 명중률 집계 추가(`WeaponController.TotalShotsFired/TotalHits/AccuracyPercent`), 라운드 종료 시 `MatchManager`가 콘솔에 로그
+- **엄폐물 배치를 180도 대칭으로 복원** (`ArenaGenerator`, 맵 52x52/엄폐물 24개/스폰 ±24) — 이전 배틀로얄 전환 커밋에 묻혀 있던 걸 재적용
+- **unity-cli 도입**: akiojin/unity-cli-bridge를 Unity 6000.5용으로 로컬 패치(`GetInstanceID`→`GetEntityId`, `E:\Git\_tools\unity-cli`)해서 `file:` 패키지로 연결 — Claude Code가 Unity 에디터를 직접 조작(Play 진입/콘솔 읽기/프리팹 편집/스크린샷)할 수 있게 됨. 포트 6400이 무관한 다른 프로그램과 충돌하는 문제가 있어 `ProjectSettings/UnityCliBridgeSettings.asset`로 16400 포트로 변경
+- **ML-Agents 도입(실험 진행 중)**: Python 3.10 + mlagents 1.1.0 설치(`MLAgentsTraining/venv`), `CombatMLAgent.cs` 신설 — AIBrain을 대체하는 학습형 전투 에이전트(AIBrain은 코드 유지, 붙으면 자동 비활성화). 3차례 학습(v1~v3) 진행하며 MaxStep 누락, onnxscript 의존성 문제, 보상 설계(reward hacking), 피치 조준 관측 누락 등 여러 문제를 발견/일부 수정 — 아직 명중률 목표(40%+) 미달성, 다음 세션에 보상 재조정 후 재학습 필요
+
 ## 2026-08-26 — 프로젝트 생성
 - FPS Manager: Unity 신규 프로젝트 생성
 - Unity 6000.5.8f1, URP(Universal Render Pipeline) 3D 템플릿으로 시작
