@@ -41,7 +41,6 @@ namespace FPSManager.Battle
 
         private GameObject overheadUI;
         private RectTransform healthBarFill;
-        private UnityEngine.UI.Image fillImageComponent;
 
         void Awake()
         {
@@ -52,14 +51,6 @@ namespace FPSManager.Battle
 
             LocateBones();
             CreateOverheadHealthBar();
-        }
-
-        public void SetTeamColor(Color color)
-        {
-            if (fillImageComponent != null)
-            {
-                fillImageComponent.color = color;
-            }
         }
 
         void LocateBones()
@@ -302,7 +293,6 @@ namespace FPSManager.Battle
             fillObj.transform.SetParent(bgObj.transform, false);
             UnityEngine.UI.Image fillImg = fillObj.AddComponent<UnityEngine.UI.Image>();
             fillImg.color = health != null && health.teamId == 0 ? new Color(0.2f, 0.6f, 1f) : new Color(1f, 0.35f, 0.2f);
-            fillImageComponent = fillImg;
             healthBarFill = fillObj.GetComponent<RectTransform>();
             healthBarFill.anchorMin = new Vector2(0, 0);
             healthBarFill.anchorMax = new Vector2(1, 1);
@@ -317,7 +307,7 @@ namespace FPSManager.Battle
 
             // Billboard towards active spectator camera
             Camera cam = Camera.main;
-            if (cam == null) cam = FindAnyObjectByType<Camera>();
+            if (cam == null) cam = FindFirstObjectByType<Camera>();
             if (cam != null)
             {
                 overheadUI.transform.rotation = Quaternion.LookRotation(overheadUI.transform.position - cam.transform.position);

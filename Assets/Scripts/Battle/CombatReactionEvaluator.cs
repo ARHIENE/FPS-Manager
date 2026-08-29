@@ -23,7 +23,6 @@ namespace FPSManager.Battle
             public float clutch;            // 0~1, 높을수록 공격적 성향
             public float positioning;       // 0~1, 높을수록 엄폐 활용이 정교함
             public int nearbyEnemyCount;    // 교전 중인 적 인원수 (1v1 프로토타입에서는 1로 고정)
-            public float zoneUrgency;       // 0~1, 자기장 밖 위급도 (0 = 원 안이거나 여유, 1 = 극도로 위급). AIBrain.ComputeZoneUrgency가 계산.
         }
 
         public static CombatReaction Evaluate(Context ctx)
@@ -46,7 +45,6 @@ namespace FPSManager.Battle
             score += ctx.attackerKnown ? 0.6f : -0.4f;
             score += ctx.clutch * 0.5f;
             score -= Mathf.Max(0, ctx.nearbyEnemyCount - 1) * 0.5f;
-            score -= ctx.zoneUrgency * 1.2f; // 자기장이 위급할수록 반격보다 생존 이동을 우선
             return score;
         }
 
@@ -66,7 +64,6 @@ namespace FPSManager.Battle
             float score = (1f - ctx.healthPct) * 0.8f;
             score += Mathf.Max(0, ctx.nearbyEnemyCount - 1) * 0.5f;
             score += (1f - ctx.clutch) * 0.6f;
-            score += ctx.zoneUrgency * 1.5f; // 자기장이 위급할수록 후퇴(자기장 진입) 압도적으로 우선
             return score;
         }
 

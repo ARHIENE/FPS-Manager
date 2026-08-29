@@ -10,16 +10,16 @@ namespace FPSManager.Battle
     {
         [Header("엄폐물 설정")]
         public GameObject coverPrefab;
-        public int coverCount = 24;
+        public int coverCount = 14;
 
         [Header("맵 범위 설정")]
-        public float mapWidth = 52f;
-        public float mapDepth = 52f;
+        public float mapWidth = 36f;
+        public float mapDepth = 36f;
 
         [Header("팀 스폰 보호 구역")]
-        public Vector3 teamASpawnCenter = new Vector3(0, 0, -24f);
-        public Vector3 teamBSpawnCenter = new Vector3(0, 0, 24f);
-        public float spawnProtectRadius = 8f;
+        public Vector3 teamASpawnCenter = new Vector3(0, 0, -16f);
+        public Vector3 teamBSpawnCenter = new Vector3(0, 0, 16f);
+        public float spawnProtectRadius = 6.5f;
 
         [Header("엄폐물 크기")]
         public Vector3 minSize = new Vector3(2.5f, 1.6f, 1.2f);
@@ -82,13 +82,11 @@ namespace FPSManager.Battle
                 return;
             }
 
-            // 맵 중심(0,0,0) 기준 180도 회전 대칭 배치: 한쪽에 배치한 엄폐물을 반대쪽에도 동일하게 미러링
-            int pairCount = coverCount / 2;
             int placed = 0;
             int attempts = 0;
-            int maxAttempts = pairCount * 25;
+            int maxAttempts = coverCount * 25;
 
-            while (placed < pairCount && attempts < maxAttempts)
+            while (placed < coverCount && attempts < maxAttempts)
             {
                 attempts++;
                 Vector3 pos = GetRandomPosition();
@@ -101,18 +99,12 @@ namespace FPSManager.Battle
                 float rotY = Random.Range(0, 4) * 90f;
 
                 SpawnCover(pos, size, rotY);
-                SpawnCover(MirrorPosition180(pos), size, rotY + 180f);
                 placed++;
             }
 
-            // Center large tactical cover (이미 중심에 있어 대칭)
+            // Center large tactical cover
             Vector3 centerSize = new Vector3(Random.Range(4f, 6f), 2.2f, Random.Range(4f, 6f));
             SpawnCover(new Vector3(0, centerSize.y / 2f, 0), centerSize, 0f);
-        }
-
-        static Vector3 MirrorPosition180(Vector3 pos)
-        {
-            return new Vector3(-pos.x, pos.y, -pos.z);
         }
 
         bool IsOverlappingSpawn(Vector3 pos)
