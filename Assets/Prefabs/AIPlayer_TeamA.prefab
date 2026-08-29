@@ -334,7 +334,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.Policies.BehaviorParameters
   m_BrainParameters:
-    VectorObservationSize: 16
+    VectorObservationSize: 17
     NumStackedVectorObservations: 1
     m_ActionSpec:
       m_NumContinuousActions: 4
@@ -381,13 +381,13 @@ MonoBehaviour:
   deathPenalty: -1
   stepPenalty: -0.0005
   headshotBonus: 0.3
-  aimRewardScale: 0.003
-  preciseAimBonus: 0.002
+  aimRewardScale: 0.0003
+  preciseAimBonus: 0.0002
   coverSearchRadius: 15
-  coverRewardScale: 0.0006
+  coverRewardScale: 0.0001
   preferredCombatDistance: 14
   distanceTolerance: 8
-  distanceRewardScale: 0.0008
+  distanceRewardScale: 0.0002
 --- !u!114 &8092313582616689023
 MonoBehaviour:
   m_ObjectHideFlags: 0

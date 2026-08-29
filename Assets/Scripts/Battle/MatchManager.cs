@@ -161,7 +161,7 @@ namespace FPSManager.Battle
                 OnScoreChanged?.Invoke(ScoreTeamA, ScoreTeamB);
                 OnRoundFinished?.Invoke(winnerText, winnerColor);
                 Debug.Log($"[MatchManager] Round {CurrentRound} Over - {winnerText}");
-                Debug.Log($"[MatchManager] 누적 명중률: {WeaponController.AccuracyPercent:F1}% ({WeaponController.TotalHits}/{WeaponController.TotalShotsFired})");
+                Debug.Log($"[MatchManager] 누적 명중률: {WeaponController.AccuracyPercent:F1}% ({WeaponController.TotalHits}/{WeaponController.TotalShotsFired}), 헤드샷 비율: {WeaponController.HeadshotPercent:F1}% ({WeaponController.TotalHeadshots}/{WeaponController.TotalHits})");
 
                 if (autoNextRound)
                 {

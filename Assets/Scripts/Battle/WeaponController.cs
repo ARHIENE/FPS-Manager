@@ -27,12 +27,15 @@ namespace FPSManager.Battle
         // 명중률 측정용 전체 집계(모든 플레이어 공용) - 필요할 때 ResetAccuracyStats()로 초기화 후 측정.
         public static int TotalShotsFired { get; private set; }
         public static int TotalHits { get; private set; }
+        public static int TotalHeadshots { get; private set; }
         public static float AccuracyPercent => TotalShotsFired > 0 ? TotalHits * 100f / TotalShotsFired : 0f;
+        public static float HeadshotPercent => TotalHits > 0 ? TotalHeadshots * 100f / TotalHits : 0f;
 
         public static void ResetAccuracyStats()
         {
             TotalShotsFired = 0;
             TotalHits = 0;
+            TotalHeadshots = 0;
         }
 
         private PlayerHealth myHealth;
@@ -177,6 +180,7 @@ namespace FPSManager.Battle
                 headTarget.ApplyDamage(headDamage, myHealth, true);
                 SpawnHitSparks(endPoint, targetHeadHit.normal, Color.yellow);
                 TotalHits++;
+                TotalHeadshots++;
             }
             else if (hitBody && bodyDist < obstacleDist)
             {

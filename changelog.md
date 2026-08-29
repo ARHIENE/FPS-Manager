@@ -1,5 +1,14 @@
 # 변경 이력
 
+## 2026-08-29 (2) — unity-cli 브릿지 안정화 + ML-Agents 보상 버그 수정 (애니메이션 교체는 계획만 세우고 중단)
+- **unity-cli 브릿지 "Play 모드 진입 후 멈춤" 버그 원인 규명 + 수정**: 도메인 리로드 직후 포트 재바인딩이 실패(`AddressAlreadyInUse`)했을 때 재시도 로직이 전혀 없어서 그대로 영구 Error 상태로 남는 게 근본 원인이었음(`UnityCliBridgeHost.cs`, Editor-prev.log에서 실제 재현 로그로 확인). `StartTcpListener()`에 논블로킹 재시도(0.5초→최대 5초로 백오프, 무제한 재시도) 추가, `StopTcpListener()`의 리스너 종료 대기도 1초→3초로 연장. 기존 GetInstanceID 패치와 동일하게 `E:\Git\_tools\unity-cli`에 uncommitted 로컬 패치로 적용. **주의: 세션 중 스크립트를 여러 개 연속 수정하며 도메인 리로드가 계속 겹쳐 발생, 마지막에 브릿지가 Error 상태로 남은 채 세션 종료 — 재시도 로직 자체는 로그로 동작 확인했으나(성공적으로 재바인딩했다가 다음 리로드로 다시 끊기는 걸 반복) 최종 수정본(무제한 재시도 버전)이 실제로 안정적으로 복구되는지는 다음 세션에서 재확인 필요**.
+- **ML-Agents v3에서 진단됐던 버그 2개 실제 수정** (`Assets/Scripts/Battle/CombatMLAgent.cs` + `AIPlayer_TeamA.prefab`/`AIPlayer_TeamB.prefab`):
+  - reward hacking: `aimRewardScale`(0.003→0.0003), `preciseAimBonus`(0.002→0.0002), `coverRewardScale`(0.0006→0.0001), `distanceRewardScale`(0.0008→0.0002)로 전부 10배가량 축소 — 가만히 조준만 하고 있어도 쌓이던 보상이 실제 명중/킬/헤드샷 보상보다 항상 작아지도록
+  - 피치(상하) 조준 방향 관측 누락: `aimPivot` 로컬 기준 수직 방향 성분(`localAimDir.y`)을 새 관측으로 추가해 "위/아래 어느 쪽으로 고쳐야 하는지" 명시적 신호 제공 — 관측 개수 16→17, 두 프리팹의 `BehaviorParameters.VectorObservationSize`도 같이 17로 수정
+  - 헤드샷 비율 계측 신규 추가(`WeaponController.TotalHeadshots`/`HeadshotPercent`), 라운드 종료 로그(`MatchManager`)에 명중률과 같이 출력 — 목표(명중률 45~50%, 헤드샷 30%) 달성 여부를 콘솔 로그만으로 판단 가능하게 함
+- **"총을 오른손에 들고 만세하는" 시각 버그 원인 조사 + 해결 계획 수립**: `HumanoidBattleAnimator`가 이 리그의 실제 로컬 축 방향 확인 없이 오일러 값을 감으로 넣은 게 원인. Kevin Iglesias 애셋 팩(`Assets/Asset/Kevin Iglesias 1/`)에는 로코모션(Idle/Walk/Run/Sprint/Turn/Jump) 클립만 있고 총기 파지 애니메이션이 없어 클립으로 직접 대체 불가 — 다리/이동은 실제 Humanoid 클립(Animator Controller + 8방향 블렌드 트리)으로, 팔은 `com.unity.animation.rigging` 패키지의 Two Bone IK로 라이플 그립 포인트(GripPointR/L)에 고정하는 방식으로 계획만 세우고 **구현은 다음 세션으로 이관**(상세 계획은 아래 log.md "다음 세션 할 일" 참고).
+- 사용자 지시로 이번 세션엔 재학습(`combat_v4`)은 시작하지 않고 코드/애셋 수정만 진행 후 세션 종료.
+
 ## 2026-08-29 — 5v5 AI 전투 디테일 개선 + unity-cli 도입 + ML-Agents 실험
 - **AI 전투 디테일 수정** (`AIBrain`/`MovementStepSelector`/`WeaponController`/`HumanoidBattleAnimator`/`PlayerMovement`)
   - 스트레이프 중 시야가 순간 끊겨도 곧장 이동 방향을 보지 않고 잠깐 마지막 위치를 계속 조준(`targetMemoryDuration`) — "쐈다가 홱 딴 데 보는" 버그 수정

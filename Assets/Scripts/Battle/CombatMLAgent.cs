@@ -34,14 +34,16 @@ namespace FPSManager.Battle
 
         [Header("조준 정확도 보상 (명중률이 너무 낮은 문제 해결용)")]
         [Tooltip("적을 보고 있을 때, 조준 방향이 적과 얼마나 정렬됐는지에 비례해 매 스텝 주는 보상 - 맞혀야만 보상받던 기존 방식은 신호가 너무 희소해서 조준을 못 배웠음")]
-        public float aimRewardScale = 0.003f;
+        // v3에서 이 값이 너무 커서(0.003) 가만히 쳐다보기만 해도 한 에피소드 동안 킬 보상(+1)에
+        // 맞먹는 보상이 누적되는 reward hacking이 발생 - 명중/킬 보상이 항상 우세하도록 10배 축소.
+        public float aimRewardScale = 0.0003f;
         [Tooltip("조준이 거의 완벽(코사인 0.995 이상)할 때 추가로 주는 보너스 - '조준을 딱 맞춘다'는 감각을 강화")]
-        public float preciseAimBonus = 0.002f;
+        public float preciseAimBonus = 0.0002f;
 
         [Header("엄폐물 활용 보상 (전혀 안 쓰는 문제 해결용)")]
         public float coverSearchRadius = 15f;
         [Tooltip("교전 중(적이 보일 때) 가까운 엄폐물에 붙어있을수록 주는 보상")]
-        public float coverRewardScale = 0.0006f;
+        public float coverRewardScale = 0.0001f;
 
         [Header("교전거리 보상 (너무 붙지도, 너무 멀어지지도 않게)")]
         [Tooltip("가장 보상을 많이 받는 목표 교전거리. AIBrain의 preferredCombatDistance와 동일 값 사용")]
@@ -49,7 +51,7 @@ namespace FPSManager.Battle
         [Tooltip("이 거리만큼 목표에서 벗어나면 보상이 0까지 떨어짐 (선형 감쇠)")]
         public float distanceTolerance = 8f;
         [Tooltip("스텝 페널티(-0.0005)보다 살짝 큰 정도로 - 거리 하나로 전략이 결정되지 않도록 작게 유지")]
-        public float distanceRewardScale = 0.0008f;
+        public float distanceRewardScale = 0.0002f;
 
         private PlayerHealth health;
         private PlayerMovement movement;
@@ -94,7 +96,7 @@ namespace FPSManager.Battle
             if (health == null || health.IsDead)
             {
                 // 죽은 뒤에도 한 스텝 정도 관측이 요청될 수 있어 0으로 채워 크기를 맞춘다.
-                for (int i = 0; i < 16; i++) sensor.AddObservation(0f);
+                for (int i = 0; i < 17; i++) sensor.AddObservation(0f);
                 return;
             }
 
@@ -148,9 +150,16 @@ namespace FPSManager.Battle
                 Vector3 aimDir = movement.aimPivot.forward;
                 Vector3 toEnemyHead = (enemy.transform.position + Vector3.up * 1.5f) - movement.aimPivot.position;
                 sensor.AddObservation(Vector3.Dot(aimDir.normalized, toEnemyHead.normalized));
+
+                // aimDot은 "얼마나 틀렸는지" 크기만 알려주고 "위/아래 어느 쪽으로 고쳐야 하는지" 방향은
+                // 안 알려줘서 피치 제어를 못 배우던 버그(v3) 수정 - aimPivot 로컬 기준 수직 성분을 추가로 줘서
+                // yaw의 dir.x/dir.z처럼 명시적인 방향 신호를 제공한다.
+                Vector3 localAimDir = movement.aimPivot.InverseTransformDirection(toEnemyHead.normalized);
+                sensor.AddObservation(localAimDir.y);
             }
             else
             {
+                sensor.AddObservation(0f);
                 sensor.AddObservation(0f);
             }
 
