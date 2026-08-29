@@ -7,7 +7,7 @@ namespace FPSManager.Battle
     /// Animates Kevin Iglesias dummy models procedurally:
     /// - Tactical weapon holding stance (arms holding rifle)
     /// - Upper-body / spine aiming pitch towards target
-    /// - Running / walking leg stride cycle based on NavMeshAgent velocity
+    /// - Leg locomotion via BattleLocomotion animator blend tree (MoveX/MoveZ driven by NavMeshAgent velocity)
     /// - Weapon recoil impulse on firing
     /// - Hit flinch and collapse death animation
     /// </summary>
@@ -17,6 +17,7 @@ namespace FPSManager.Battle
         private PlayerHealth health;
         private PlayerMovement movement;
         private WeaponController weapon;
+        private Animator legAnimator;
 
         // Bones
         private Transform bRoot;
@@ -39,10 +40,9 @@ namespace FPSManager.Battle
         private Quaternion initSpineRot, initChestRot, initHeadRot;
         private Quaternion initUpperArmR, initForearmR, initHandR;
         private Quaternion initUpperArmL, initForearmL, initHandL;
-        private Quaternion initThighL, initShinL;
-        private Quaternion initThighR, initShinR;
+        private Quaternion initThighL;
+        private Quaternion initThighR;
 
-        private float walkCycle;
         private float recoilAmount;
         private float deathProgress;
         private Vector3 deathFallDir;
@@ -59,6 +59,9 @@ namespace FPSManager.Battle
 
             LocateBones();
             CreateOverheadHealthBar();
+
+            Transform humanDummy = transform.Find("HumanDummy");
+            if (humanDummy != null) legAnimator = humanDummy.GetComponent<Animator>();
         }
 
         void LocateBones()
@@ -112,9 +115,7 @@ namespace FPSManager.Battle
             if (handL != null) initHandL = handL.localRotation;
 
             if (thighL != null) initThighL = thighL.localRotation;
-            if (shinL != null) initShinL = shinL.localRotation;
             if (thighR != null) initThighR = thighR.localRotation;
-            if (shinR != null) initShinR = shinR.localRotation;
         }
 
         Transform FindChildRecursive(Transform parent, string childName)
@@ -169,7 +170,7 @@ namespace FPSManager.Battle
 
             ApplyCrouchOffset();
             ApplyAimAndWeaponPose();
-            ApplyLegAnimation();
+            ApplyLegAnimatorParams();
         }
 
         void ApplyCrouchOffset()
@@ -239,49 +240,15 @@ namespace FPSManager.Battle
             }
         }
 
-        void ApplyLegAnimation()
+        void ApplyLegAnimatorParams()
         {
+            if (legAnimator == null || legAnimator.runtimeAnimatorController == null) return;
+
             bool agentActive = agent != null && agent.enabled && agent.isOnNavMesh;
-            float speed = agentActive ? agent.velocity.magnitude : 0f;
-            float crouchKneeBend = crouchAmount * 30f;
+            Vector3 localVel = agentActive ? transform.InverseTransformDirection(agent.velocity) : Vector3.zero;
 
-            if (speed > 0.1f)
-            {
-                walkCycle += Time.deltaTime * speed * 3.5f;
-                float speedRatio = Mathf.Clamp01(speed / 3f);
-                float cycle = Mathf.Sin(walkCycle);
-
-                // 이동 방향(전진/후퇴 vs 좌우)에 따라 다리를 앞뒤로 흔들지, 옆으로 흔들지 섞어서 결정
-                // (스트레이프 중에도 항상 전진 걷기 사이클만 재생되던 문제 보정)
-                Vector3 localVel = transform.InverseTransformDirection(agent.velocity);
-                float fwdRatio = Mathf.Clamp01(Mathf.Abs(localVel.z) / Mathf.Max(speed, 0.01f));
-                float sideRatio = Mathf.Clamp01(Mathf.Abs(localVel.x) / Mathf.Max(speed, 0.01f));
-                float sideSign = Mathf.Sign(localVel.x);
-
-                float legAngle = cycle * 32f * speedRatio * fwdRatio;
-                float sideAngle = cycle * 22f * speedRatio * sideRatio * sideSign;
-                float kneeBendL = Mathf.Max(0f, -cycle) * 45f * speedRatio + crouchKneeBend;
-                float kneeBendR = Mathf.Max(0f, cycle) * 45f * speedRatio + crouchKneeBend;
-
-                if (thighL != null) thighL.localRotation = initThighL * Quaternion.Euler(legAngle, 0f, sideAngle);
-                if (shinL != null) shinL.localRotation = initShinL * Quaternion.Euler(-kneeBendL, 0f, 0f);
-
-                if (thighR != null) thighR.localRotation = initThighR * Quaternion.Euler(-legAngle, 0f, -sideAngle);
-                if (shinR != null) shinR.localRotation = initShinR * Quaternion.Euler(-kneeBendR, 0f, 0f);
-            }
-            else
-            {
-                // 정지 상태: 앉아있으면 무릎을 굽힌 자세로, 아니면 중립 자세로 보간
-                Quaternion targetThighL = initThighL;
-                Quaternion targetShinL = initShinL * Quaternion.Euler(-crouchKneeBend, 0f, 0f);
-                Quaternion targetThighR = initThighR;
-                Quaternion targetShinR = initShinR * Quaternion.Euler(-crouchKneeBend, 0f, 0f);
-
-                if (thighL != null) thighL.localRotation = Quaternion.Slerp(thighL.localRotation, targetThighL, Time.deltaTime * 10f);
-                if (shinL != null) shinL.localRotation = Quaternion.Slerp(shinL.localRotation, targetShinL, Time.deltaTime * 10f);
-                if (thighR != null) thighR.localRotation = Quaternion.Slerp(thighR.localRotation, targetThighR, Time.deltaTime * 10f);
-                if (shinR != null) shinR.localRotation = Quaternion.Slerp(shinR.localRotation, targetShinR, Time.deltaTime * 10f);
-            }
+            legAnimator.SetFloat("MoveX", localVel.x);
+            legAnimator.SetFloat("MoveZ", localVel.z);
         }
 
         void ApplyDeathPose()

@@ -1,5 +1,11 @@
 # 변경 이력
 
+## 2026-08-30 — 캐릭터 애니메이션 교체: 다리 완료, 팔은 브릿지 장애로 보류
+- **다리(로코모션) 완료**: `Assets/Editor/BattleLocomotionBuilder.cs` 신설(에디터 메뉴 실행 시 `Assets/Animation/Battle/BattleLocomotion.controller` 생성 — Idle + Walk/Run 8방향 2D Freeform Directional 블렌드 트리, 파라미터 `MoveX`/`MoveZ`, Walk 반경 4.2/Run 반경 6.3). 3개 프리팹(`AIPlayer`/`AIPlayer_TeamA`/`AIPlayer_TeamB`)의 `HumanDummy/Animator`에 연결, `applyRootMotion` 끔. `HumanoidBattleAnimator.ApplyLegAnimation()`(본 직접 회전) 삭제 → `ApplyLegAnimatorParams()`(매 프레임 `agent.velocity`를 로컬 좌표로 변환해 `Animator.SetFloat`)로 교체, 안 쓰이던 `walkCycle`/`initShinL`/`initShinR` 필드 정리. Play 모드 스크린샷으로 매치 정상 진행 확인(탑다운이라 클로즈업 검증은 아직 안 함).
+- **팔/라이플 IK 계획 폐기**: 세션 2에서 세운 "그립 포인트 2개 + Two Bone IK" 계획의 전제(`TacticalRifle` 프리팹)가 프로젝트에 실제로 없음을 확인(`WeaponController`는 순수 레이캐스트, `B-handProp.R`은 자식 없는 빈 오브젝트, `GunMat.mat`도 어디서도 참조 안 됨). Animation Rigging 패키지 설치 안 함.
+- **팔 회전 재튜닝 시도, 브릿지 장애로 중단**: 라이플 없이 "만세" 버그를 회전 상수 재튜닝만으로 고치는 방향으로 결정(사용자 확인: 팔이 앞으로 뻗어야 함). 실측을 위해 Play 모드 진입 → 도메인 리로드 후 unity-cli 브릿지가 포트 16400 재바인딩 실패 상태로 30분 넘게 복구 안 됨(세션 3 초반엔 3분대였던 것보다 훨씬 심각, 좀비 소켓 재확인). 실측 없이 값을 추측해서 넣는 건 원래 버그 원인을 반복하는 거라 판단해 `HumanoidBattleAnimator.cs`는 변경하지 않고 중단. 브릿지 쪽에 `SO_REUSEADDR` 한 줄 추가 시도했으나 재컴파일이 안 걸려 반영/검증 못함(`E:\Git\_tools\unity-cli`, uncommitted). 사용자가 데스크톱을 다른 용도로 쓰고 있어 에디터 창 포커스 강제 전환은 시도하지 않음(입력 미전달 확인).
+- 남은 것: unity-cli 브릿지 복구(에디터 재시작 또는 수동 포커스) → 팔 자세 실측 튜닝 → combat_v4 재학습
+
 ## 2026-08-29 (2) — unity-cli 브릿지 안정화 + ML-Agents 보상 버그 수정 (애니메이션 교체는 계획만 세우고 중단)
 - **unity-cli 브릿지 "Play 모드 진입 후 멈춤" 버그 원인 규명 + 수정**: 도메인 리로드 직후 포트 재바인딩이 실패(`AddressAlreadyInUse`)했을 때 재시도 로직이 전혀 없어서 그대로 영구 Error 상태로 남는 게 근본 원인이었음(`UnityCliBridgeHost.cs`, Editor-prev.log에서 실제 재현 로그로 확인). `StartTcpListener()`에 논블로킹 재시도(0.5초→최대 5초로 백오프, 무제한 재시도) 추가, `StopTcpListener()`의 리스너 종료 대기도 1초→3초로 연장. 기존 GetInstanceID 패치와 동일하게 `E:\Git\_tools\unity-cli`에 uncommitted 로컬 패치로 적용. **주의: 세션 중 스크립트를 여러 개 연속 수정하며 도메인 리로드가 계속 겹쳐 발생, 마지막에 브릿지가 Error 상태로 남은 채 세션 종료 — 재시도 로직 자체는 로그로 동작 확인했으나(성공적으로 재바인딩했다가 다음 리로드로 다시 끊기는 걸 반복) 최종 수정본(무제한 재시도 버전)이 실제로 안정적으로 복구되는지는 다음 세션에서 재확인 필요**.
 - **ML-Agents v3에서 진단됐던 버그 2개 실제 수정** (`Assets/Scripts/Battle/CombatMLAgent.cs` + `AIPlayer_TeamA.prefab`/`AIPlayer_TeamB.prefab`):

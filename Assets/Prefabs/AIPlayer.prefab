@@ -16,6 +16,8 @@ GameObject:
   - component: {fileID: 100008}
   - component: {fileID: 100009}
   - component: {fileID: 8823447143652862490}
+  - component: {fileID: 3570482476557076600}
+  - component: {fileID: 2468306230742577701}
   m_Layer: 0
   m_Name: AIPlayer
   m_TagString: Untagged
@@ -116,6 +118,8 @@ MonoBehaviour:
   pitchSpeed: 720
   maxSpread: 3
   spreadRecoverySpeed: 5
+  crouchSpreadMultiplier: 0.5
+  sprintSpreadMultiplier: 1.6
 --- !u!114 &100008
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -156,6 +160,24 @@ MonoBehaviour:
   losBlockMask:
     serializedVersion: 2
     m_Bits: 4294967295
+  roamStoppingDistance: 0.5
+  roamReachedThreshold: 1.5
+  plantChance: 0.6
+  plantMinDuration: 0.4
+  plantMaxDuration: 1
+  strafeBurstMinDuration: 0.3
+  strafeBurstMaxDuration: 0.7
+  coverModeChance: 0.35
+  combatCoverRadius: 10
+  targetMemoryDuration: 0.6
+  coverPatrolChance: 0.6
+  coverSearchRadius: 15
+  takeCoverMinDuration: 1
+  takeCoverMaxDuration: 1.8
+  retreatMinDuration: 2
+  retreatMaxDuration: 3.5
+  peekMinDuration: 0.5
+  peekMaxDuration: 0.9
 --- !u!114 &8823447143652862490
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -168,6 +190,49 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bb7112e7deaa4ab4c8aff06f73aa1bc6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FPSManager.Battle.HumanoidBattleAnimator
+  crouchHeightOffset: 0.45
+  crouchBlendSpeed: 6
+--- !u!114 &3570482476557076600
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 100000}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 86aeb4af8a502d04d9ca28058a1bbc57, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::FPSManager.Battle.MovementStepSelector
+  moveSpeed: 4.2
+  angularSpeed: 720
+  acceleration: 14
+  preferredCombatDistance: 14
+  strafeRadius: 5
+  strafeMinInterval: 0.5
+  strafeMaxInterval: 1.4
+  jukeChance: 0.25
+  distanceJitter: 3
+  moveBlendSpeed: 6
+  crouchSpeedMultiplier: 0.5
+  sprintSpeedMultiplier: 1.5
+  jumpDistance: 2.5
+  jumpHeight: 0.8
+  jumpDuration: 0.35
+--- !u!114 &2468306230742577701
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 100000}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 240c092bf3da0944aad7e9b0f486723b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::FPSManager.Battle.PlayerCombatStats
+  clutch: 0.5
+  positioning: 0.5
 --- !u!1 &100010
 GameObject:
   m_ObjectHideFlags: 0
@@ -367,10 +432,10 @@ Animator:
   m_GameObject: {fileID: 180953514897676275}
   m_Enabled: 1
   m_Avatar: {fileID: 9000000, guid: d9cd8eb4a074cd84ab2686c58bcf21d9, type: 3}
-  m_Controller: {fileID: 0}
+  m_Controller: {fileID: 9100000, guid: 6f8c12ce8db99b64c8ef269367a33167, type: 2}
   m_CullingMode: 1
   m_UpdateMode: 0
-  m_ApplyRootMotion: 1
+  m_ApplyRootMotion: 0
   m_LinearVelocityBlending: 0
   m_StabilizeFeet: 0
   m_AnimatePhysics: 0
