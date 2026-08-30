@@ -31,12 +31,19 @@ namespace FPSManager.Battle
         public float stepPenalty = -0.0005f;
         [Tooltip("데미지 보상과 별개로, 헤드샷이면 추가로 붙는 보너스 - 헤드샷 비중을 늘리기 위함")]
         public float headshotBonus = 0.3f;
+        [Tooltip("사격했는데 빗맞았을 때 페널티 - v4까지는 이게 없어서 정렬 상태와 무관하게 난사해도 손해가 없었음(명중률 저조의 핵심 원인으로 추정)")]
+        // v5 첫 시도에서 -0.02는 너무 강해서, 학습 초반 명중률이 0에 가까울 때 "쏘는 행동" 자체의
+        // 기대값이 거의 항상 마이너스가 되어 정책이 아예 발사를 포기해버림(교전 회피로 보상만 챙기는 현상 관찰).
+        // 난사보다 조준이 낫다는 신호는 유지하되, 사격 자체를 지워버리지 않을 만큼 약화.
+        public float missPenalty = -0.003f;
 
         [Header("조준 정확도 보상 (명중률이 너무 낮은 문제 해결용)")]
         [Tooltip("적을 보고 있을 때, 조준 방향이 적과 얼마나 정렬됐는지에 비례해 매 스텝 주는 보상 - 맞혀야만 보상받던 기존 방식은 신호가 너무 희소해서 조준을 못 배웠음")]
         // v3에서 이 값이 너무 커서(0.003) 가만히 쳐다보기만 해도 한 에피소드 동안 킬 보상(+1)에
         // 맞먹는 보상이 누적되는 reward hacking이 발생 - 명중/킬 보상이 항상 우세하도록 10배 축소.
-        public float aimRewardScale = 0.0003f;
+        // v5에서 missPenalty 도입과 함께 추가로 절반 축소 - "쳐다보기만" 해도 받는 보상 비중을 더 낮추고
+        // "정확히 쏴서 맞추기" 쪽으로 신호를 더 쏠리게 함.
+        public float aimRewardScale = 0.00015f;
         [Tooltip("조준이 거의 완벽(코사인 0.995 이상)할 때 추가로 주는 보너스 - '조준을 딱 맞춘다'는 감각을 강화")]
         public float preciseAimBonus = 0.0002f;
 
@@ -52,6 +59,10 @@ namespace FPSManager.Battle
         public float distanceTolerance = 8f;
         [Tooltip("스텝 페널티(-0.0005)보다 살짝 큰 정도로 - 거리 하나로 전략이 결정되지 않도록 작게 유지")]
         public float distanceRewardScale = 0.0002f;
+
+        [Header("탐색 보상 (적을 못 찾고 벽에 붙어 정체되는 문제 해결용)")]
+        [Tooltip("적이 안 보일 때는 이동에 대한 보상이 전혀 없어서, 가만히 있으나 벽에 막혀있으나 학습 입장에서 손해가 똑같아 정체 현상이 발생함(v5 학습 중 관측). 실제 이동 속도에 비례한 보상을 줘서 최소한 돌아다닐 유인을 만듦.")]
+        public float explorationRewardScale = 0.0002f;
 
         private PlayerHealth health;
         private PlayerMovement movement;
@@ -84,6 +95,7 @@ namespace FPSManager.Battle
 
             health.OnDamaged += HandleDamaged;
             health.OnDeathWithAttacker += HandleDeath;
+            weapon.OnShotFired += HandleShotFired;
         }
 
         public override void OnEpisodeBegin()
@@ -222,6 +234,7 @@ namespace FPSManager.Battle
             ApplyDistanceReward();
             ApplyAimReward();
             ApplyCoverReward();
+            ApplyExplorationReward();
 
             // 적이 보일 때만 실제로 발사되도록 하드 게이팅 - "안 보이는데도 난사" 문제를
             // 보상만으로 학습시키는 대신 구조적으로 원천 차단한다(AIBrain도 동일하게 LOS로 발사를 게이팅함).
@@ -268,6 +281,16 @@ namespace FPSManager.Battle
             AddReward(band * coverRewardScale);
         }
 
+        // 적이 안 보일 때, 실제로 움직이고 있으면 보상 - 가만히 있거나 벽에 막혀 정체된 상태를 벗어나
+        // 돌아다니며 적을 찾도록 유도한다(정지 상태와 손해가 똑같으면 탐색할 이유가 없어짐).
+        void ApplyExplorationReward()
+        {
+            if (currentTarget != null || agent == null || !agent.isOnNavMesh) return;
+
+            float speedRatio = Mathf.Clamp01(agent.velocity.magnitude / Mathf.Max(moveSpeed, 0.01f));
+            AddReward(speedRatio * explorationRewardScale);
+        }
+
         void ApplyRotation(float yawDelta, float pitchDelta)
         {
             transform.Rotate(Vector3.up, yawDelta * turnSpeed * Time.fixedDeltaTime, Space.World);
@@ -305,6 +328,12 @@ namespace FPSManager.Battle
                     if (isHeadshot) attackerAgent.AddReward(headshotBonus);
                 }
             }
+        }
+
+        // 사격했는데 빗맞았을 때 페널티 - 명중(HandleDamaged)은 이미 별도로 보상받으므로 여기선 miss만 처리.
+        void HandleShotFired(bool hit)
+        {
+            if (!hit) AddReward(missPenalty);
         }
 
         void HandleDeath(PlayerHealth victim, PlayerHealth attacker, bool isHeadshot)

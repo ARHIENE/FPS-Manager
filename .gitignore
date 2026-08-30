@@ -28,3 +28,4 @@ crashlytics-build.properties
 # 최종 모델은 Assets/ML-Agents/Models/에 .onnx로 따로 복사해서 트래킹함
 MLAgentsTraining/venv/
 MLAgentsTraining/results/
+MLAgentsTraining/*.log

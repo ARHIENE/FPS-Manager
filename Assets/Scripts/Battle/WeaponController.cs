@@ -24,6 +24,9 @@ namespace FPSManager.Battle
         // AIBrain이 매 프레임 갱신하는 발사 의도.
         [HideInInspector] public bool triggerPressed;
 
+        // 사격 결과(명중 여부)를 쏜 사람에게 알려주는 이벤트 - CombatMLAgent가 빗맞음 페널티에 사용.
+        public event System.Action<bool> OnShotFired;
+
         // 명중률 측정용 전체 집계(모든 플레이어 공용) - 필요할 때 ResetAccuracyStats()로 초기화 후 측정.
         public static int TotalShotsFired { get; private set; }
         public static int TotalHits { get; private set; }
@@ -174,6 +177,8 @@ namespace FPSManager.Battle
             float headDist = hitHead ? targetHeadHit.distance : range;
             float bodyDist = hitBody ? targetBodyHit.distance : range;
 
+            bool didHit = false;
+
             if (hitHead && headDist < obstacleDist)
             {
                 endPoint = targetHeadHit.point;
@@ -181,6 +186,7 @@ namespace FPSManager.Battle
                 SpawnHitSparks(endPoint, targetHeadHit.normal, Color.yellow);
                 TotalHits++;
                 TotalHeadshots++;
+                didHit = true;
             }
             else if (hitBody && bodyDist < obstacleDist)
             {
@@ -188,6 +194,7 @@ namespace FPSManager.Battle
                 bodyTarget.ApplyDamage(bodyDamage, myHealth, false);
                 SpawnHitSparks(endPoint, targetBodyHit.normal, Color.red);
                 TotalHits++;
+                didHit = true;
             }
             else if (hitObstacle)
             {
@@ -195,6 +202,8 @@ namespace FPSManager.Battle
                 SpawnBulletHole(blockingObstacle.point, blockingObstacle.normal);
                 SpawnHitSparks(endPoint, blockingObstacle.normal, Color.white);
             }
+
+            OnShotFired?.Invoke(didHit);
 
             Vector3 startPoint = firePoint != null ? firePoint.position : aimOrigin.position;
             ShowTracer(startPoint, endPoint);
