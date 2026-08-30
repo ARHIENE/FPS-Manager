@@ -27,31 +27,33 @@
 - 관전은 매크로(탑뷰) + FPS 1인칭 두 시점 모두 필요(기획서 5번) — 현재는 정식 아키텍처 아닌 임시 관전 카메라만 존재
 - 개발 우선순위는 원래 ①시뮬레이션 코어 → ②매크로 뷰 → ③FPS 1인칭 뷰였으나, **AI가 실제로 움직이며 싸우는 전투 자체를 먼저 구현**하기로 함(매니저 메타 루프·스탯 시스템은 이후 단계)
 
-## 5v5 AI 배틀 — 현재 상태 (2026-08-30 기준, 세션 3 종료 시점)
+## 5v5 AI 배틀 — 현재 상태 (2026-08-30 기준, 세션 4 종료 시점)
 대상 씬: `Assets/Scenes/AIBattle5v5.unity`. 스크립트: `Assets/Scripts/Battle/`
 
-세션 3 상세 작업 내역은 `changelog.md`(2026-08-30 항목) 참고. 요약:
-- **다리(로코모션) 완료**: `BattleLocomotion.controller`(Idle + Walk/Run 8방향 블렌드 트리) 3개 프리팹에 연결, `HumanoidBattleAnimator.ApplyLegAnimatorParams()`로 교체 완료. Play 모드에서 매치 정상 진행 확인(클로즈업 검증은 미완료).
-- **팔 — 아직 "만세" 자세 그대로.** 라이플 메시가 프로젝트에 없어 IK 계획은 폐기(사용자 확인), "회전 상수만 재튜닝해서 팔을 앞으로 뻗게" 방향으로 확정했으나, 실측 시도 중 unity-cli 브릿지가 30분 넘게 멈춰서 코드 변경 없이 중단.
-- **unity-cli 브릿지 상태 나쁨**: 도메인 리로드 후 재연결이 세션 초반엔 3분대였다가 세션 후반엔 30분+ 로 악화. `SO_REUSEADDR` 수정 1줄을 `E:\Git\_tools\unity-cli`에 추가했지만 uncommitted 상태이고 재컴파일 안 돼서 검증 못함.
+세션 4 상세 작업 내역은 `changelog.md`(2026-08-30 (2) 항목) 참고. 요약:
+- **combat_v4 재학습 완료, 그러나 목표 미달**: 2,000,000 스텝 끝까지 완주(`MLAgentsTraining/results/combat_v4/CombatAgent.onnx` 생성됨, 아직 프리팹엔 미적용). 평균 보상은 -1.4→-0.3까지 개선됐지만, 라운드 로그(`MatchManager`) 기준 최근 구간 순간 명중률은 약 10~11%(목표 45~50%)로 한참 못 미침. `AIPlayer_TeamA/B.prefab`의 `BehaviorType`은 학습용으로 0(Default)로 바꿨다가 종료 후 다시 2(Inference Only)로 되돌려놓음(기존 구모델 그대로 참조 중 — v4 onnx는 아직 교체 안 함, 성능 미달이라 보류).
+- **팔 자세 — 이번에도 손 못 댐.** 학습 중엔 스크립트 수정(재컴파일)이 트레이너 연결을 끊기 때문에 코드 변경을 아예 미룸. 세션 3에서 정한 방향(라이플 없이 팔을 앞으로 뻗는 자세, 실측 기반 회전 상수 재조정)은 그대로 유효.
+- **unity-cli 브릿지 문제 재발+악화**: 세션 시작부터 좀비 소켓 상태(포트 16400 Listen+CloseWait 동시 점유)로 멎어있었음 → 사용자 승인 받아 Unity 에디터 프로세스 강제 종료 후 재시작으로 해결(임시 조치, 세션 3의 `SO_REUSEADDR` 수정은 이번에도 검증 못함 — 여전히 uncommitted). 이후 학습 도중/종료 후 다시 브릿지가 불안정해짐(타임아웃 → "connection refused"로 증상 변화). **재발 빈도가 너무 잦아 다음 세션엔 이 우선순위를 가장 높게 볼 것.**
+- **학습 연결 순서 이슈 확인**: `mlagents-learn`을 띄우기 전에 Unity Play를 먼저 누르면 핸드셰이크 타임아웃(기본 60초)으로 실패함. **트레이너를 먼저 띄우고(포트 5004 리스닝 확인) 그 다음에 Play를 눌러야 함.** 재시도 시 이전 실행이 남긴 좀비 python 워커가 포트 5004를 계속 물고 있는 경우가 많았음(`Get-Process -Name python | Stop-Process`로 정리 필요).
+- **PlayMCP(카카오톡) MCP 연동 시도**: `claude mcp add`로 로컬 등록 시 IP 화이트리스트 거부(`ERR-PLAYAUTH-90403`) — 이 커넥터는 Anthropic 커넥터 프록시 경유만 허용하는 것으로 보임. 사용자가 claude.ai 웹 설정(Connectors)에서 다시 등록해 `claude.ai PlayMCP`로 연결 성공(로컬 CLI 등록분은 정리함). 다만 이 세션 시작 후에 붙은 커넥터라 도구가 아직 안 보임 — 세션 재시작 후 카톡 발송 도구 사용 가능 여부 확인 필요. 사용자 요청: "작업 끝나면 카카오톡으로 완료 메시지 보내기" — 재시작 후 이 요청 처리할 것.
 
 ### 다음 세션 할 일 (우선순위 순)
 
-**1. unity-cli 브릿지 복구 먼저 확인**
-- 세션 시작 시 `unity-cli.exe system ping`으로 상태 확인. 응답 없으면 Unity 에디터를 사용자가 직접 한 번 포커스하거나(재컴파일 유도), 그래도 안 되면 에디터 완전 재시작(좀비 소켓 정리)부터 할 것.
-- 브릿지 복구되면 `E:\Git\_tools\unity-cli`의 uncommitted `SO_REUSEADDR` 수정이 실제로 재연결 속도를 개선하는지 확인.
+**1. unity-cli 브릿지 안정성 근본 조치**
+- 세션 시작 시 `unity-cli.exe system ping`으로 상태 확인.
+- 재발이 너무 잦음 — 이번엔 임시 재시작 말고 `E:\Git\_tools\unity-cli`의 `SO_REUSEADDR` 수정이 실제로 원인 해결에 도움되는지 제대로 검증(에디터 재시작 직후 재컴파일되는지부터 확인), 필요하면 근본 원인을 다시 조사.
+- Play 모드 진입 전에 `mlagents-learn`을 먼저 띄워야 한다는 점, 좀비 python 워커가 포트를 점유할 수 있다는 점을 학습 관련 작업 시 기억할 것.
 
-**2. 팔 자세 실측 튜닝 (방향 확정됨: 라이플 없이, 팔을 앞으로 뻗는 자세)**
-- `HumanoidBattleAnimator.ApplyAimAndWeaponPose()`의 `upperArmR/L`/`forearmR/L`/`handR/L` 회전 상수 재작업. 리그의 실제 로컬 축 방향을 스크린샷으로 실측하며 값 조정(추측으로 넣지 말 것 — 이게 원래 "만세" 버그 원인).
+**2. 팔 자세 실측 튜닝 (방향 확정됨: 라이플 없이, 팔을 앞으로 뻗는 자세) — 학습이 안 도는 동안에만 가능**
+- `HumanoidBattleAnimator.ApplyAimAndWeaponPose()`의 `upperArmR/L`/`forearmR/L`/`handR/L` 회전 상수 재작업. 리그의 실제 로컬 축 방향을 스크린샷으로 실측하며 값 조정(추측으로 넣지 말 것).
 - 스파인/체스트/헤드 피치(조준 상하) 코드는 그대로 유지.
 
 **3. 다리 애니메이션 클로즈업 검증**
 - 캐릭터에 카메라 근접시켜 Walk/Run 블렌드가 실제로 자연스러운지 육안 확인. 부자연스러우면 블렌드 트리 반경(현재 Walk=4.2, Run=6.3)이나 클립 매핑 재조정.
 
-**4. 재학습 (combat_v4)**
-- 팔 자세 해결 후, `MLAgentsTraining/venv` 활성화 후 `mlagents-learn trainer_config.yaml --run-id=combat_v4` 실행 (Unity Editor Play 모드로 연결).
-- **주의**: `AIPlayer_TeamA.prefab`/`AIPlayer_TeamB.prefab`의 `BehaviorParameters.m_BehaviorType`이 현재 `2`(Inference Only, 고정 onnx 모델 사용)로 설정되어 있음 — 학습을 시작하려면 이걸 `0`(Default, 외부 트레이너 연결)으로 바꿔야 함. 학습 끝나면 다시 `2`로 바꾸고 `m_Model`을 새 onnx로 교체.
-- 목표: 라운드 종료 로그(`[MatchManager] 누적 명중률.../헤드샷 비율...`) 기준 명중률 45~50%, 헤드샷 비율 30% 근접. 미달 시 보상 스케일/하이퍼파라미터 추가 조정 후 `combat_v5`로 반복.
+**4. combat_v5 방향 결정 필요 (사용자 확인)**
+- v4가 목표(명중률 45~50%, 헤드샷 30%) 대비 크게 미달(순간 명중률 ~10%). 다음 옵션 중 선택: (a) max_steps를 늘려 더 길게 학습, (b) `aimRewardScale` 등 보상 스케일/하이퍼파라미터 추가 조정 후 재학습, (c) 관측/보상 설계 자체를 재검토.
+- 학습 시작 전 `BehaviorType`을 0(Default)으로, 끝나면 2(Inference Only)로 되돌리고 성능이 목표치를 넘기면 그때 `m_Model`을 새 onnx로 교체.
 
 **5. 기존 백로그(아직 미해결)**
 - 앉기/뛰기/옆걸음/회피 홉을 `AIBrain`(핸드튜닝) 판단 로직에 연동할지 결정 필요(지금은 기능만 있고 아무도 안 씀)

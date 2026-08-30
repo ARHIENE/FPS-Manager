@@ -1,5 +1,15 @@
 # 변경 이력
 
+## 2026-08-30 (2) — combat_v4 재학습 완주(목표 미달), unity-cli 브릿지 재발, PlayMCP 연동 시도
+- **unity-cli 브릿지 좀비 소켓 재발**: 세션 시작부터 포트 16400이 `Listen`+`CloseWait` 동시 점유 상태로 죽어있었음. 사용자 승인 하에 Unity.exe 프로세스(PID) 강제 종료 후 `Unity.exe -projectPath "E:\Git\Fps Manager"`로 재시작해 임시 해결. 세션 3에서 추가했던 `SO_REUSEADDR` 수정(`E:\Git\_tools\unity-cli`, uncommitted)은 이번에도 재검증 못함.
+- **combat_v4 학습 절차에서 새로 배운 것**:
+  - `mlagents-learn`을 먼저 띄워 포트 5004에서 리스닝을 확인한 뒤에 Unity Play를 눌러야 함 — Play를 먼저 누르면 기본 핸드셰이크 타임아웃(60초)에 걸려 `UnityTimeOutException` 발생. `--timeout-wait=600`으로 여유를 늘려서 재시도.
+  - 이전 실행이 비정상 종료되면 python 워커 프로세스가 포트 5004를 계속 점유(`UnityWorkerInUseException`)하는 경우가 여러 번 있었음 — `Get-Process -Name python | Stop-Process`로 정리 후 재시도해야 함.
+  - git-bash로 백그라운드 실행한 `mlagents-learn`이 자체 멀티프로세싱(worker subprocess) 단계에서 알 수 없는 `BrokenPipeError`로 죽는 걸 확인 — PowerShell `Start-Process`로 직접 띄우는 방식으로 바꾸니 안정적으로 동작함.
+- **combat_v4 학습 완료, 목표 미달**: 2,000,000 스텝 완주. 평균 보상 -1.4 → -0.3까지 개선됐으나, `MatchManager` 라운드 로그 기준 최근 구간 순간 명중률은 약 10~11%(목표 45~50%, 헤드샷 30%)로 크게 미달. 모델은 `MLAgentsTraining/results/combat_v4/CombatAgent.onnx`로 저장됐지만 프리팹엔 적용하지 않음(성능 미달로 보류). 학습용으로 바꿨던 두 프리팹의 `BehaviorType`(0)은 종료 후 2(Inference Only, 기존 모델 유지)로 원복.
+- **팔 자세 튜닝은 이번 세션도 보류**: 학습 연결 중엔 스크립트 수정(재컴파일)이 트레이너 연결을 끊어서 코드 변경을 미룸. 세션 3에서 정한 방향(라이플 없이 팔을 앞으로 뻗는 자세)은 유효.
+- **PlayMCP(카카오톡 알림) MCP 연동 시도**: `claude mcp add --transport http`로 로컬 등록 시 IP 화이트리스트 거부(`ERR-PLAYAUTH-90403`, PlayMCP는 Anthropic 커넥터 프록시 경유만 허용하는 것으로 추정). 사용자가 claude.ai 웹 Connectors 설정에서 재등록해 `claude.ai PlayMCP`로 연결 성공. 로컬 CLI 등록분은 정리. 세션 재시작 후 실제 카톡 발송 도구 사용 가능 여부 확인 필요 — 사용자가 "작업 완료 시 카카오톡으로 알림" 요청함.
+
 ## 2026-08-30 — 캐릭터 애니메이션 교체: 다리 완료, 팔은 브릿지 장애로 보류
 - **다리(로코모션) 완료**: `Assets/Editor/BattleLocomotionBuilder.cs` 신설(에디터 메뉴 실행 시 `Assets/Animation/Battle/BattleLocomotion.controller` 생성 — Idle + Walk/Run 8방향 2D Freeform Directional 블렌드 트리, 파라미터 `MoveX`/`MoveZ`, Walk 반경 4.2/Run 반경 6.3). 3개 프리팹(`AIPlayer`/`AIPlayer_TeamA`/`AIPlayer_TeamB`)의 `HumanDummy/Animator`에 연결, `applyRootMotion` 끔. `HumanoidBattleAnimator.ApplyLegAnimation()`(본 직접 회전) 삭제 → `ApplyLegAnimatorParams()`(매 프레임 `agent.velocity`를 로컬 좌표로 변환해 `Animator.SetFloat`)로 교체, 안 쓰이던 `walkCycle`/`initShinL`/`initShinR` 필드 정리. Play 모드 스크린샷으로 매치 정상 진행 확인(탑다운이라 클로즈업 검증은 아직 안 함).
 - **팔/라이플 IK 계획 폐기**: 세션 2에서 세운 "그립 포인트 2개 + Two Bone IK" 계획의 전제(`TacticalRifle` 프리팹)가 프로젝트에 실제로 없음을 확인(`WeaponController`는 순수 레이캐스트, `B-handProp.R`은 자식 없는 빈 오브젝트, `GunMat.mat`도 어디서도 참조 안 됨). Animation Rigging 패키지 설치 안 함.
