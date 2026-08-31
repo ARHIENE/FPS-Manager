@@ -28,7 +28,10 @@ namespace FPSManager.Battle
         public float damageTakenPenaltyScale = 0.01f;
         public float killReward = 1f;
         public float deathPenalty = -1f;
-        public float stepPenalty = -0.0005f;
+        // MaxStep(3000)까지 타임아웃되면 stepPenalty가 누적돼 -1.5가 됐었음 - deathPenalty(-1)보다 나빠서
+        // "죽는 게 오히려 덜 나쁜 선택"이 되는 역유인이 있었음(v5에서 발견). 3000스텝 누적 상한이 deathPenalty보다
+        // 확실히 약하도록(-0.9) 축소해 타임아웃 회피 목적의 자살 유인을 제거.
+        public float stepPenalty = -0.0003f;
         [Tooltip("데미지 보상과 별개로, 헤드샷이면 추가로 붙는 보너스 - 헤드샷 비중을 늘리기 위함")]
         public float headshotBonus = 0.3f;
         [Tooltip("사격했는데 빗맞았을 때 페널티 - v4까지는 이게 없어서 정렬 상태와 무관하게 난사해도 손해가 없었음(명중률 저조의 핵심 원인으로 추정)")]
@@ -59,10 +62,28 @@ namespace FPSManager.Battle
         public float distanceTolerance = 8f;
         [Tooltip("스텝 페널티(-0.0005)보다 살짝 큰 정도로 - 거리 하나로 전략이 결정되지 않도록 작게 유지")]
         public float distanceRewardScale = 0.0002f;
+        [Tooltip("이 거리보다 가까이 붙으면 페널티가 시작됨 - 설치/해체 판정 범위가 좁아서(interactRadius) 양팀이 그냥 밀착해서 쏘는 문제 방지용")]
+        public float tooCloseDistance = 3f;
+        public float tooClosePenaltyScale = 0.0003f;
 
         [Header("탐색 보상 (적을 못 찾고 벽에 붙어 정체되는 문제 해결용)")]
         [Tooltip("적이 안 보일 때는 이동에 대한 보상이 전혀 없어서, 가만히 있으나 벽에 막혀있으나 학습 입장에서 손해가 똑같아 정체 현상이 발생함(v5 학습 중 관측). 실제 이동 속도에 비례한 보상을 줘서 최소한 돌아다닐 유인을 만듦.")]
         public float explorationRewardScale = 0.0002f;
+
+        [Header("설치/해체 보상 (v7 - 숨기만 하는 문제 해결용, 라운드 타임리밋으로 강제 교전 유도)")]
+        [Tooltip("사이트에서 채널링(설치/해체) 진행 중 매 스텝 주는 작은 보상 - 끝까지 버티게 유인")]
+        public float channelProgressRewardScale = 0.01f;
+        [Tooltip("설치 성공 보너스 (공격팀)")]
+        public float plantReward = 0.6f;
+        [Tooltip("해체 성공 보너스 (수비팀)")]
+        public float defuseReward = 0.6f;
+        [Tooltip("라운드 승리 시 생존자 전원에게 주는 보너스 - 개인 킬뿐 아니라 팀 목표(설치/해체/타임아웃) 달성을 학습시키기 위함")]
+        public float roundWinReward = 0.5f;
+        [Tooltip("라운드 패배 시 생존자 전원에게 주는 페널티")]
+        public float roundLossPenalty = -0.5f;
+
+        private float channelProgress;
+        private bool isChanneling;
 
         private PlayerHealth health;
         private PlayerMovement movement;
@@ -101,6 +122,8 @@ namespace FPSManager.Battle
         public override void OnEpisodeBegin()
         {
             currentTarget = null;
+            channelProgress = 0f;
+            isChanneling = false;
         }
 
         public override void CollectObservations(VectorSensor sensor)
@@ -108,7 +131,7 @@ namespace FPSManager.Battle
             if (health == null || health.IsDead)
             {
                 // 죽은 뒤에도 한 스텝 정도 관측이 요청될 수 있어 0으로 채워 크기를 맞춘다.
-                for (int i = 0; i < 17; i++) sensor.AddObservation(0f);
+                for (int i = 0; i < 24; i++) sensor.AddObservation(0f);
                 return;
             }
 
@@ -193,6 +216,38 @@ namespace FPSManager.Battle
                 sensor.AddObservation(0f);
                 sensor.AddObservation(1f);
             }
+
+            // 설치/해체 목표(사이트) 관측 - 사이트가 하나뿐이라 공격/수비 모두 라운드 내내 이 지점이
+            // 목표점이다(설치 전엔 가서 심어야 하고, 설치 후엔 지키거나 해체하러 가야 함).
+            var mm = MatchManager.Instance;
+            if (mm != null)
+            {
+                bool isAttacker = health.teamId == mm.attackerTeamId;
+                sensor.AddObservation(isAttacker ? 1f : 0f);
+                sensor.AddObservation(mm.CurrentBombPhase == MatchManager.BombPhase.Planted ? 1f : 0f);
+
+                // 설치 전엔 사이트 중심, 설치 후엔 실제로 설치된 지점이 목표점 - 수비팀은 폭탄을
+                // 찾아가야 하고, 공격팀도 설치 후엔 그 자리를 지키러 돌아가야 하므로 둘 다 유효하다.
+                Vector3 objectivePoint = mm.CurrentBombPhase == MatchManager.BombPhase.Planted
+                    ? mm.PlantedBombPosition
+                    : mm.bombSiteWorldPosition;
+                Vector3 toSite = objectivePoint - transform.position;
+                Vector3 siteDir = transform.InverseTransformDirection(toSite.normalized);
+                sensor.AddObservation(siteDir.x);
+                sensor.AddObservation(siteDir.z);
+                sensor.AddObservation(Mathf.Clamp01(toSite.magnitude / detectRadius));
+
+                float holdTime = isAttacker ? mm.plantHoldTime : mm.defuseHoldTime;
+                float timePressure = mm.CurrentBombPhase == MatchManager.BombPhase.Planted
+                    ? Mathf.Clamp01(mm.BombTimeRemaining / Mathf.Max(mm.bombFuseTime, 0.01f))
+                    : Mathf.Clamp01(mm.RoundTimeRemaining / Mathf.Max(mm.roundTimeLimit, 0.01f));
+                sensor.AddObservation(timePressure);
+                sensor.AddObservation(holdTime > 0f ? Mathf.Clamp01(channelProgress / holdTime) : 0f);
+            }
+            else
+            {
+                for (int i = 0; i < 7; i++) sensor.AddObservation(0f);
+            }
         }
 
         Transform FindNearestCover()
@@ -228,6 +283,7 @@ namespace FPSManager.Battle
             float yawDelta = Mathf.Clamp(actions.ContinuousActions[2], -1f, 1f);
             float pitchDelta = Mathf.Clamp(actions.ContinuousActions[3], -1f, 1f);
             bool wantsFire = actions.DiscreteActions[0] == 1;
+            bool wantsInteract = actions.DiscreteActions[1] == 1;
 
             ApplyRotation(yawDelta, pitchDelta);
             ApplyMovement(moveForward, moveStrafe);
@@ -235,10 +291,56 @@ namespace FPSManager.Battle
             ApplyAimReward();
             ApplyCoverReward();
             ApplyExplorationReward();
+            UpdateObjectiveProgress(wantsInteract);
 
             // 적이 보일 때만 실제로 발사되도록 하드 게이팅 - "안 보이는데도 난사" 문제를
             // 보상만으로 학습시키는 대신 구조적으로 원천 차단한다(AIBrain도 동일하게 LOS로 발사를 게이팅함).
-            weapon.triggerPressed = wantsFire && currentTarget != null;
+            // 설치/해체 채널링 중에는(실제 CS/Valorant처럼) 사격 불가.
+            weapon.triggerPressed = wantsFire && currentTarget != null && !isChanneling;
+        }
+
+        // 공격팀은 설치 전에 "사이트(넓은 구역) 안 아무 데서나" 설치 가능 - 위치를 자유롭게 고를 수 있다.
+        // 수비팀은 설치 후에 "실제로 설치된 그 지점 근처(좁은 판정 범위)"에서만 해체 가능 - 사이트를
+        // 통째로 알아도 정확한 지점까지 와서 싸워야 한다. 조건이 깨지면(범위 밖으로 나가거나 손을 떼면)
+        // 진행도가 리셋된다 - 실제 CS/Valorant의 "채널링 중단" 규칙과 동일.
+        void UpdateObjectiveProgress(bool wantsInteract)
+        {
+            var mm = MatchManager.Instance;
+            if (mm == null) { channelProgress = 0f; isChanneling = false; return; }
+
+            bool isAttacker = health.teamId == mm.attackerTeamId;
+            bool validPhase = isAttacker
+                ? mm.CurrentBombPhase == MatchManager.BombPhase.NotPlanted
+                : mm.CurrentBombPhase == MatchManager.BombPhase.Planted;
+            bool inSite = isAttacker
+                ? Vector3.Distance(transform.position, mm.bombSiteWorldPosition) <= mm.bombSiteRadius
+                : Vector3.Distance(transform.position, mm.PlantedBombPosition) <= mm.interactRadius;
+
+            isChanneling = wantsInteract && inSite && validPhase;
+            if (!isChanneling)
+            {
+                channelProgress = 0f;
+                return;
+            }
+
+            channelProgress += Time.fixedDeltaTime;
+            AddReward(channelProgressRewardScale);
+
+            float holdTime = isAttacker ? mm.plantHoldTime : mm.defuseHoldTime;
+            if (channelProgress < holdTime) return;
+
+            channelProgress = 0f;
+            bool success = isAttacker ? mm.PlantBomb(transform.position) : mm.DefuseBomb();
+            if (success) AddReward(isAttacker ? plantReward : defuseReward);
+        }
+
+        // 라운드가 킬이 아니라 타임아웃/설치/해체로 끝났을 때, 그 시점에 살아있던 에이전트들은
+        // HandleDeath를 못 거치므로 별도로 종료 보상 + EndEpisode를 줘야 한다(MatchManager가 호출).
+        public void OnRoundResolved(bool won)
+        {
+            AddReward(won ? roundWinReward : roundLossPenalty);
+            if (weapon != null) weapon.triggerPressed = false;
+            EndEpisode();
         }
 
         // 목표 교전거리에서 가장 큰 보상, 너무 붙거나 너무 멀어지면 선형으로 감소(0까지) - "멀수록 좋다"가 아니라
@@ -251,6 +353,15 @@ namespace FPSManager.Battle
             float diff = Mathf.Abs(dist - preferredCombatDistance);
             float band = Mathf.Clamp01(1f - diff / distanceTolerance);
             AddReward(band * distanceRewardScale);
+
+            // 설치/해체 판정 범위(interactRadius)가 좁아서 양팀이 그 안에서 밀착한 채로 쏘는 문제가
+            // 있었음(실측 확인 - 명중률이 오른 이유가 실력이 아니라 그냥 근접사격이었음). 위의 선호거리
+            // 보상은 붙어도 0일 뿐 페널티가 없어서 억제력이 부족했음 - 너무 가까우면 명시적으로 깎는다.
+            if (dist < tooCloseDistance)
+            {
+                float closeness = Mathf.Clamp01(1f - dist / tooCloseDistance);
+                AddReward(-closeness * tooClosePenaltyScale);
+            }
         }
 
         // 적을 보고 있을 때, 조준 방향이 적에게 정렬될수록 매 스텝 보상 - 명중이라는 희귀한 사건만 기다리지 않고
@@ -309,15 +420,56 @@ namespace FPSManager.Battle
             Vector3 moveDir = transform.forward * moveForward + transform.right * moveStrafe;
             if (moveDir.sqrMagnitude > 1f) moveDir.Normalize();
 
+            float moveDist = moveDir.magnitude * moveSpeed * Time.fixedDeltaTime;
+            if (moveDist > 0.0001f) moveDir = ApplyWallSlide(moveDir, moveDist);
+
             // NavMeshAgent를 경로탐색이 아니라 직접 위치 구동 방식으로 사용
             // (nextPosition을 매 스텝 갱신하면 NavMesh 표면에 붙은 채로 커스텀 이동이 가능)
             Vector3 desired = agent.nextPosition + moveDir * moveSpeed * Time.fixedDeltaTime;
             agent.nextPosition = desired;
         }
 
+        // direct-position-drive 방식이라 NavMeshAgent 자체 충돌회피가 작동하지 않아서, 정책이 회전을
+        // 학습하기 전까지 장애물(엄폐물 등)에 그대로 눌려 못 움직이는 문제가 있었음(실측 확인 - 사용자가
+        // 화면에서 "장애물에 비비면서 서로를 못 찾는다"고 확인). 이동하려는 방향에 장애물이 있으면 파고드는
+        // 성분만 제거하고 벽을 따라 미끄러지는 성분은 남긴다 - 엄폐물 뒤에 가만히 서서 쏘는 전술적 정지는
+        // 애초에 이동 명령이 0에 가까워서 이 로직이 개입하지 않으므로 영향 없음. 다른 플레이어(적/아군)는
+        // 제외해서 근접 교전 시 서로를 밀어내지 않게 한다.
+        Vector3 ApplyWallSlide(Vector3 moveDir, float moveDist)
+        {
+            const float castRadius = 0.3f;
+            Vector3 origin = transform.position + Vector3.up * 1f;
+            RaycastHit[] hits = Physics.SphereCastAll(origin, castRadius, moveDir.normalized, moveDist, losBlockMask);
+            System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+
+            foreach (var hit in hits)
+            {
+                if (hit.collider.isTrigger) continue;
+                if (hit.transform == transform || hit.transform.IsChildOf(transform)) continue;
+                if (hit.collider.GetComponentInParent<PlayerHealth>() != null) continue;
+
+                // 접선 성분만 남기고 끝내면, 보정된 위치가 NavMesh 경계에 다시 딱 붙어서 다음 프레임에
+                // 똑같은 충돌이 재감지되는 피드백 루프가 생겨 제자리에서 떠는 문제가 있었음(실측 확인 -
+                // 사용자가 화면에서 "미세하게 떨림" 확인). 표면에서 살짝 밀어내는 성분을 더해 재충돌을 막는다.
+                // 거의 정면충돌(접선이 거의 0)이면 미세한 접선 방향으로 계속 떠는 대신 아예 멈춘다.
+                Vector3 tangent = Vector3.ProjectOnPlane(moveDir, hit.normal);
+                if (tangent.sqrMagnitude < 0.0025f) return Vector3.zero;
+
+                const float pushOut = 0.05f;
+                return tangent + hit.normal * pushOut;
+            }
+            return moveDir;
+        }
+
         void HandleDamaged(PlayerHealth victim, PlayerHealth attacker, bool isHeadshot, float amount)
         {
             AddReward(-amount * damageTakenPenaltyScale);
+
+            // 실제 CS/Valorant처럼 설치/해체 채널링 중 피격당하면 진행도가 끊긴다 - 이게 없으면
+            // 사이트 위치를 양팀 다 처음부터 알고 있는 지금 구조에서, 수비팀이 그냥 뛰어가서 총알
+            // 맞아가며 버티기만 해도 해체가 되는 문제가 있었음(실측: 사용자가 화면에서 확인).
+            // 이 규칙을 넣어야 "설치 후 지키기"(공격) / "해체 전에 사살"(수비)이 실제로 유인된다.
+            if (isChanneling) channelProgress = 0f;
 
             if (attacker != null)
             {
@@ -408,6 +560,7 @@ namespace FPSManager.Battle
 
             var discrete = actionsOut.DiscreteActions;
             discrete[0] = 0;
+            discrete[1] = 0;
         }
     }
 }

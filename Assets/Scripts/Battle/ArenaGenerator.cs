@@ -13,12 +13,17 @@ namespace FPSManager.Battle
         public int coverCount = 24;
 
         [Header("맵 범위 설정")]
+        // 104(2배)로 키웠다가 NavMesh 베이크가 지나치게 오래 걸려서(실측: 15분 넘게 브릿지 응답 없음)
+        // 원래 크기로 되돌림 - 거점을 진영 끝에 두는 설계(공격팀이 맵을 가로질러야 함)는 그대로 유지.
         public float mapWidth = 52f;
         public float mapDepth = 52f;
 
         [Header("팀 스폰 보호 구역")]
-        public Vector3 teamASpawnCenter = new Vector3(0, 0, -24f);
-        public Vector3 teamBSpawnCenter = new Vector3(0, 0, 24f);
+        // 설치/해체 모드로 바뀌면서 스폰이 씬 고정 Transform이 아니라 MatchManager가 사이트 위치
+        // 기준으로 계산하는 방식으로 바뀜(공격팀은 사이트 반대편 끝) - 여기 값도 그와 일치시켜서
+        // 엄폐물이 스폰 위치에 안 겹치게 한다.
+        public Vector3 teamASpawnCenter = new Vector3(0, 0, -20f);
+        public Vector3 teamBSpawnCenter = new Vector3(0, 0, 20f);
         public float spawnProtectRadius = 8f;
 
         [Header("엄폐물 크기")]
